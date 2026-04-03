@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -67,6 +68,15 @@ fun AppNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
     val showBottomBar = state.hasProfile && currentDestination?.route in BottomDestinations.map { it.route }
+    fun navigateToTopLevel(route: String) {
+        navController.navigate(route) {
+            launchSingleTop = true
+            restoreState = true
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -76,15 +86,7 @@ fun AppNavHost(
                         val selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
                         NavigationBarItem(
                             selected = selected,
-                            onClick = {
-                                navController.navigate(destination.route) {
-                                    launchSingleTop = true
-                                    restoreState = true
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
-                                    }
-                                }
-                            },
+                            onClick = { navigateToTopLevel(destination.route) },
                             icon = destination.icon,
                             label = { Text(destination.label) },
                         )
@@ -111,7 +113,7 @@ fun AppNavHost(
             composable(AppDestinations.Home) {
                 TodaySummaryScreenRoute(
                     container = AppContainer.instance,
-                    onNavigateToTrends = { navController.navigate(AppDestinations.Trends) },
+                    onNavigateToTrends = { navigateToTopLevel(AppDestinations.Trends) },
                 )
             }
             composable(AppDestinations.Capture) {
