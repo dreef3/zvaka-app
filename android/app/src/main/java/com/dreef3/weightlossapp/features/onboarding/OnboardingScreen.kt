@@ -32,9 +32,9 @@ fun OnboardingScreenRoute(
     OnboardingScreen(
         state = state,
         onFirstNameChanged = { value -> vm.updateForm { it.copy(firstName = value) } },
-        onAgeChanged = { value -> vm.updateForm { it.copy(ageYears = value) } },
-        onHeightChanged = { value -> vm.updateForm { it.copy(heightCm = value) } },
-        onWeightChanged = { value -> vm.updateForm { it.copy(weightKg = value) } },
+        onAgeChanged = { value -> vm.updateForm { it.copy(ageYears = value.filter(Char::isDigit)) } },
+        onHeightChanged = { value -> vm.updateForm { it.copy(heightCm = value.filter(Char::isDigit)) } },
+        onWeightChanged = { value -> vm.updateForm { it.copy(weightKg = value.filter(Char::isDigit)) } },
         onSexChanged = { value -> vm.updateForm { it.copy(sex = value) } },
         onActivityLevelChanged = { value -> vm.updateForm { it.copy(activityLevel = value) } },
         onSubmit = vm::submit,

@@ -6,7 +6,7 @@ object OnboardingValidator {
         if (state.firstName.isBlank()) issues += "First name is required"
         if (state.ageYears.toIntOrNull() !in 1..120) issues += "Age must be valid"
         if (state.heightCm.toIntOrNull() !in 50..300) issues += "Height must be valid"
-        if ((state.weightKg.toDoubleOrNull() ?: 0.0) !in 20.0..500.0) issues += "Weight must be valid"
+        if (state.weightKg.toIntOrNull() !in 20..500) issues += "Weight must be valid"
         return issues
     }
 }

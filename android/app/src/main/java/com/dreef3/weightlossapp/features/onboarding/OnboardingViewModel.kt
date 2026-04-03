@@ -42,7 +42,7 @@ class OnboardingViewModel(
                     sex = form.sex,
                     ageYears = form.ageYears.toInt(),
                     heightCm = form.heightCm.toInt(),
-                    weightKg = form.weightKg.toDouble(),
+                    weightKg = form.weightKg.toInt().toDouble(),
                     activityLevel = form.activityLevel,
                 ),
             )

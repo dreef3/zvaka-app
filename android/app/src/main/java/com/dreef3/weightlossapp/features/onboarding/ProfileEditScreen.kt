@@ -11,6 +11,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +34,7 @@ fun ProfileEditScreen(
 ) {
     val profile by container.profileRepository.observeProfile().collectAsStateWithLifecycle(initialValue = null)
     val budgetPeriods by container.profileRepository.observeBudgetPeriods().collectAsStateWithLifecycle(initialValue = emptyList())
+    val coachAutoAdviceEnabled by container.preferences.coachAutoAdviceEnabled.collectAsStateWithLifecycle(initialValue = true)
     val scope = rememberCoroutineScope()
 
     var form by remember { mutableStateOf(OnboardingFormState()) }
@@ -96,7 +98,7 @@ fun ProfileEditScreen(
             onFirstNameChanged = { form = form.copy(firstName = it) },
             onAgeChanged = { form = form.copy(ageYears = it.filter(Char::isDigit)) },
             onHeightChanged = { form = form.copy(heightCm = it.filter(Char::isDigit)) },
-            onWeightChanged = { value -> form = form.copy(weightKg = value.filter { ch -> ch.isDigit() || ch == '.' }) },
+            onWeightChanged = { value -> form = form.copy(weightKg = value.filter(Char::isDigit)) },
             onSexChanged = { form = form.copy(sex = it) },
             onActivityLevelChanged = { form = form.copy(activityLevel = it) },
         )
@@ -125,7 +127,7 @@ fun ProfileEditScreen(
                             sex = form.sex,
                             ageYears = form.ageYears.toInt(),
                             heightCm = form.heightCm.toInt(),
-                            weightKg = form.weightKg.toDouble(),
+                            weightKg = form.weightKg.toInt().toDouble(),
                             activityLevel = form.activityLevel,
                         ),
                     )
@@ -136,6 +138,54 @@ fun ProfileEditScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(if (isSaving) "Saving..." else "Save profile")
+        }
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "Settings",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "Coach can open with instant meal analysis before you type anything.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = "Instant coach advice",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "Generate advice automatically when the Coach tab opens.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = coachAutoAdviceEnabled,
+                        onCheckedChange = { enabled ->
+                            scope.launch {
+                                container.preferences.setCoachAutoAdviceEnabled(enabled)
+                            }
+                        },
+                    )
+                }
+            }
         }
     }
 }

@@ -2,6 +2,7 @@ package com.dreef3.weightlossapp.features.onboarding
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -14,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.dreef3.weightlossapp.domain.model.ActivityLevel
 import com.dreef3.weightlossapp.domain.model.Sex
@@ -42,16 +44,19 @@ fun OnboardingFields(
             value = state.ageYears,
             onValueChange = onAgeChanged,
             label = { Text("Age") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         )
         OutlinedTextField(
             value = state.heightCm,
             onValueChange = onHeightChanged,
             label = { Text("Height (cm)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         )
         OutlinedTextField(
             value = state.weightKg,
             onValueChange = onWeightChanged,
             label = { Text("Weight (kg)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         )
         ExposedDropdownMenuBox(
             expanded = sexExpanded,

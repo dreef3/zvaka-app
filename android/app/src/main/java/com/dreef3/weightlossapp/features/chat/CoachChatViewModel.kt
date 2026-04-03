@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -83,6 +84,8 @@ class CoachChatViewModel(
 
     init {
         initialAnalysisJob = viewModelScope.launch {
+            val autoAdviceEnabled = container.preferences.coachAutoAdviceEnabled.first()
+            if (!autoAdviceEnabled) return@launch
             var attempts = 0
             while (attempts < 10 && !hasMeaningfulSnapshot(snapshotState.value)) {
                 delay(200)

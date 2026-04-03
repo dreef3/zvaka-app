@@ -21,13 +21,26 @@ class AppPreferences(
         }
         .map { prefs -> prefs[Keys.HasCompletedOnboarding] ?: false }
 
+    val coachAutoAdviceEnabled: Flow<Boolean> = context.dataStore.data
+        .catch {
+            if (it is IOException) emit(emptyPreferences()) else throw it
+        }
+        .map { prefs -> prefs[Keys.CoachAutoAdviceEnabled] ?: true }
+
     suspend fun setCompletedOnboarding(value: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[Keys.HasCompletedOnboarding] = value
         }
     }
 
+    suspend fun setCoachAutoAdviceEnabled(value: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.CoachAutoAdviceEnabled] = value
+        }
+    }
+
     private object Keys {
         val HasCompletedOnboarding = booleanPreferencesKey("has_completed_onboarding")
+        val CoachAutoAdviceEnabled = booleanPreferencesKey("coach_auto_advice_enabled")
     }
 }
