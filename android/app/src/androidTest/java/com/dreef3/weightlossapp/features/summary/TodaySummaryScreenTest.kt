@@ -1,0 +1,43 @@
+package com.dreef3.weightlossapp.features.summary
+
+import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.dreef3.weightlossapp.domain.model.DailySummary
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.time.LocalDate
+
+@RunWith(AndroidJUnit4::class)
+class TodaySummaryScreenTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    @Test
+    fun showsTotalsAndOverBudgetNotice() {
+        composeRule.setContent {
+            TodaySummaryScreen(
+                state = TodaySummaryUiState(
+                    summary = DailySummary(
+                        date = LocalDate.parse("2026-04-03"),
+                        budgetCalories = 2000,
+                        consumedCalories = 2300,
+                        remainingCalories = -300,
+                        status = "over",
+                        entryCount = 2,
+                        hasLimitedConfidenceEntries = false,
+                    ),
+                    isEmpty = false,
+                ),
+                onNavigateToCapture = {},
+                onNavigateToTrends = {},
+                onNavigateToProfile = {},
+            )
+        }
+
+        composeRule.onNodeWithText("Today's calories: 2300 consumed / -300 remaining").assertExists()
+        composeRule.onNodeWithText("You are over budget.").assertExists()
+    }
+}

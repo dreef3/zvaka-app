@@ -2,80 +2,80 @@
 
 ## Onboarding Contract
 
-**Purpose**: Define the inputs and outputs for the first-run profile and budget flow.
+**Purpose**: Define the first-run profile and calorie-budget setup flow.
 
 **Inputs**:
 - First name
-- Height
-- Weight
-- Age
+- Weight in kilograms
+- Height in centimeters
+- Age in years
 - Sex
-- Age or date of birth
 - Activity level
 
 **Output State**:
-- Stored `UserProfile`
-- Active `DailyCalorieBudget`
-- Redirect target set to the today's summary screen
+- Persisted `UserProfile`
+- Active `DailyCalorieBudgetPeriod` effective today
+- Navigation target set to today's summary screen
 
 **Rules**:
-- First-run users must complete this flow before the app treats calorie tracking as active.
-- Returning users must not be forced back through onboarding unless profile data is missing or they intentionally edit it.
-- Profile updates that change the budget must create a new active budget effective on the day of change and must not rewrite earlier days.
+- First-run users must complete onboarding before calorie tracking is active.
+- Returning users must not be forced back through onboarding unless profile data is missing.
+- Editing profile values that change the budget creates a new budget period effective on the save date only.
 
 ## Food Capture Contract
 
-**Purpose**: Define the boundary for photo-based meal logging.
+**Purpose**: Define the app-layer behavior for photo-based meal logging.
 
 **Input**:
-- One food photo captured or selected by the user
+- One food photo captured with the device camera
 
-**AI Estimation Response Shape**:
+**Inference Output Shape**:
 - `estimatedCalories`: integer
-- `confidenceLabel`: one of `high`, `medium`, `low`, or omitted
-- `detectedFoodLabel`: short description of the detected food
-- `confidenceNotes`: optional brief explanation of ambiguity
+- `confidenceState`: `high`, `non_high`, or `failed`
+- `detectedFoodLabel`: short label shown to the user when confirmation is required
+- `confidenceNotes`: optional explanation of uncertainty
 
 **Output State**:
-- A persisted `FoodEntry`
-- Updated `DailySummary` for the relevant day
+- A persisted `FoodEntry` when the save path succeeds
+- Updated `DailySummary`
 - Updated trend aggregates derived from the changed day
 
 **Rules**:
-- The primary flow must persist the entry without routing the user through long meal forms.
-- If estimation confidence is not high, the app must ask the user to confirm whether the detected food is correct before saving.
-- If the user rejects the detected food, the app must ask for another photo and must not save the current result.
+- High-confidence estimates save silently by default.
+- Non-high-confidence estimates must show the detected food and require a yes/no confirmation before save.
+- If the user rejects the detection, the app must request another photo and must not save the rejected result.
 
 ## Daily Summary Contract
 
-**Purpose**: Define the minimum data shown on the home screen.
+**Purpose**: Define the minimum home-screen data contract.
 
 **Displayed Fields**:
 - Today's budget calories
 - Today's consumed calories
 - Today's remaining calories
 - Over-budget or under-budget status
-- Entry count for today
+- Today's entry count
 
 **Rules**:
-- The values shown must reflect the latest active entries and budget for today's date.
-- Edits and deletions must update the summary without requiring a manual refresh.
+- Values must update immediately after entry creation, correction, or deletion.
+- The summary must use the budget period active for today's local date.
 
 ## Trend Summary Contract
 
-**Purpose**: Define the data contract for the 7-day and 30-day summary views.
+**Purpose**: Define the minimum 7-day and 30-day summary views.
 
 **Supported Windows**:
 - Last 7 days
 - Last 30 days
 
 **Displayed Fields**:
-- Total calories consumed in the window
-- Total budget calories in the window
-- Average consumed calories per day
-- Average remaining calories per day
-- Partial-history indicator when full-window data is unavailable
+- Total consumed calories
+- Total budget calories
+- Average consumed calories
+- Average remaining calories
+- Partial-history indicator when the full requested window is unavailable
 
 **Rules**:
-- The trend view must remain available even when the user has fewer than 7 or 30 days of history.
-- Window calculations must include only active, non-deleted food entries.
+- Trend views must remain accessible within two actions from the main screen.
+- Historical calculations must use the budget period active on each included day.
+- Rejected or deleted entries must not contribute to the window.

@@ -1,0 +1,29 @@
+package com.dreef3.weightlossapp.work
+
+import android.content.Context
+import androidx.work.Data
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import com.dreef3.weightlossapp.domain.usecase.PhotoProcessingScheduler
+
+class WorkManagerPhotoProcessingScheduler(
+    private val context: Context,
+) : PhotoProcessingScheduler {
+    override fun enqueue(
+        entryId: Long,
+        imagePath: String,
+        capturedAtEpochMs: Long,
+    ) {
+        val request = OneTimeWorkRequestBuilder<PhotoProcessingWorker>()
+            .setInputData(
+                Data.Builder()
+                    .putLong(PhotoProcessingWorker.KEY_ENTRY_ID, entryId)
+                    .putString(PhotoProcessingWorker.KEY_IMAGE_PATH, imagePath)
+                    .putLong(PhotoProcessingWorker.KEY_CAPTURED_AT_EPOCH_MS, capturedAtEpochMs)
+                    .build(),
+            )
+            .build()
+
+        WorkManager.getInstance(context).enqueue(request)
+    }
+}

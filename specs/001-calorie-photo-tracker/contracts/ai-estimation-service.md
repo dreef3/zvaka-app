@@ -1,42 +1,43 @@
-# AI Estimation Service Contract
+# On-Device Estimation Contract
 
 ## Purpose
 
-Define the narrow service boundary between the PWA and the remote food-photo calorie
-estimation capability.
+Define the internal boundary between the Android feature layer and the embedded
+Gemma 4 E2B + LiteRT-LM inference adapter.
 
 ## Request Contract
 
 **Inputs**:
-- `image`: one meal photo
+- `imagePath`: app-private path or URI token for one captured food photo
 - `capturedAt`: timestamp of capture
 - `locale`: optional locale hint for food naming or notes
 
 **Constraints**:
-- One request corresponds to one user logging event.
-- The client must treat the service as estimation-only; it does not own food-entry
-  persistence or daily total calculations.
+- One request corresponds to one logging attempt.
+- The inference adapter is estimation-only and does not own persistence, daily totals,
+  or trend calculations.
 
 ## Response Contract
 
 **Required Fields**:
-- `estimatedCalories`: integer calorie estimate
+- `estimatedCalories`: integer
+- `confidenceState`: one of `high`, `non_high`, `failed`
 
 **Optional Fields**:
-- `confidenceLabel`: normalized confidence indicator
 - `detectedFoodLabel`: short detected-food description used in confirmation prompts
-- `confidenceNotes`: short explanation of ambiguity or assumptions
-- `detectedItems`: optional list of recognized meal components for future display
+- `confidenceNotes`: short explanation of ambiguity or missing certainty
+- `detectedItems`: optional list of meal components if the embedded model can provide them
 
 ## Error Contract
 
 **Failure Classes**:
+- `model-unavailable`
+- `model-load-failed`
 - `unreadable-image`
-- `estimation-unavailable`
-- `network-failure`
-- `rate-limited`
+- `estimation-failed`
+- `inference-timeout`
 
 **Rules**:
-- Errors must be explicit enough for the client to show a user-facing recovery path.
-- The client must not create a successful AI-derived entry from an error response.
-- Recovery may include retry, discard, or confirmation-driven retake after a low-confidence result.
+- Error results must be explicit enough for the app to show a user-facing retry or retake path.
+- The app must not create a successful food entry from an error response.
+- A `non_high` response is not an error; it routes to the confirmation flow.

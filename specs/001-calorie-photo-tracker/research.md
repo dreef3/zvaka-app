@@ -1,112 +1,136 @@
 # Research: Weight Loss Calorie Tracker
 
-## Platform Choice
+## Native Platform Choice
 
-**Decision**: Build the first release as a Progressive Web App optimized for Android.
+**Decision**: Implement the first release as a native Android application built
+with Kotlin and Gradle.
 
-**Rationale**: The user explicitly allowed "Android application (or PWA)." A PWA
-keeps the initial scope smaller, supports installable mobile behavior, and avoids
-native Android build and release overhead while the product is still validating a
-small personal-use workflow.
+**Rationale**: The latest clarification makes native Android mandatory. A single
+Android app avoids the extra moving parts of a PWA shell or backend and fits the
+constitution's preference for the simplest stack that satisfies the requirement.
 
 **Alternatives considered**:
-- Native Android app: stronger device integration, but higher implementation and
-  maintenance cost for the first slice.
-- Cross-platform native wrapper: still adds packaging complexity without clear
-  user benefit for the requested feature set.
+- PWA: no longer acceptable after clarification
+- Cross-platform runtime: adds framework overhead without solving a real problem
+
+## UI Architecture
+
+**Decision**: Use Jetpack Compose with a single-activity architecture, feature-level
+ViewModels, and Navigation Compose.
+
+**Rationale**: Compose is the simplest modern Android UI stack for a small app with
+four screens and a few transient states. It keeps UI state, previews, and testing
+straightforward while avoiding XML/view-binding duplication.
+
+**Alternatives considered**:
+- XML fragments: workable, but heavier for iteration and state wiring
+- Multi-activity app: unnecessary for this scope
 
 ## Persistence Strategy
 
-**Decision**: Store profile, calorie budget, and food-log history locally in
-IndexedDB.
+**Decision**: Store structured data in Room, lightweight settings in DataStore, and
+captured photos in app-private storage.
 
-**Rationale**: The product is single-user, local-first, and does not need account
-management or multi-device synchronization in the first version. IndexedDB supports
-structured history, image metadata, and offline viewing without introducing a server.
-
-**Alternatives considered**:
-- Remote database and auth: unnecessary for a first personal-use release.
-- localStorage only: too limited and brittle for structured history and larger data.
-
-## AI Estimation Boundary
-
-**Decision**: Use a narrow AI vision adapter that accepts a food photo and returns a
-calorie estimate plus confidence notes.
-
-**Rationale**: The product's only remote intelligence requirement is estimating
-calories from food photos. Keeping this behind a small service boundary lets the app
-stay simple and makes provider changes possible without reshaping the rest of the app.
+**Rationale**: The app is local-first, single-user, and offline-capable for core
+history and summary views. Room fits the relational needs of budget periods and food
+entries better than ad hoc file storage, while DataStore is enough for first-run and
+simple preferences.
 
 **Alternatives considered**:
-- On-device vision: lower privacy risk but too complex and less flexible for the
-  first implementation.
-- Manual-only entry: simpler technically, but does not satisfy the main user value.
+- SharedPreferences only: too limited for history and queries
+- SQLite without Room: lower-level and more error-prone for a solo app
+- Remote backend: conflicts with the clarified on-device design
+
+## On-Device Inference Boundary
+
+**Decision**: Wrap the LiteRT-LM Android `Engine` and the embedded Gemma runtime in
+a local inference adapter that accepts one image and returns calories, confidence
+state, detected food, and optional notes.
+
+**Rationale**: The app needs one narrow AI boundary. Keeping inference behind a
+small adapter isolates runtime initialization, prompt formatting, model loading, and
+error handling from the feature code and keeps a later model swap localized.
+
+**Alternatives considered**:
+- Direct model calls from UI code: too brittle and hard to test
+- Remote AI API: explicitly rejected by the clarified requirement
+
+## Embedded Model Constraint
+
+**Decision**: Treat `Gemma 4 E2B` as a fixed product constraint and use the
+LiteRT-LM Android runtime as the Kotlin integration surface, with model-capability
+checks isolated behind an adapter.
+
+**Rationale**: The user specified this exact stack. Official public Android examples
+currently document LiteRT-LM for Kotlin/Gradle integration and emphasize supported
+LiteRT model packaging. The plan needs a clean escape hatch if Gemma 4 E2B packaging
+or runtime support differs when implementation starts. The adapter boundary keeps
+that risk localized without contradicting the spec.
+
+**Alternatives considered**:
+- Silently changing the model family: violates the user's clarified requirement
+- Hard-coding model/runtime usage throughout the app: makes any compatibility fix expensive
+
+## Runtime Initialization
+
+**Decision**: Initialize the LiteRT-LM engine off the main thread and reuse a
+long-lived runtime instance for capture requests.
+
+**Rationale**: The official Android docs note that model initialization can take
+seconds. Loading the engine in a background coroutine and reusing it reduces startup
+jank and avoids paying the full initialization cost for every photo.
+
+**Alternatives considered**:
+- Recreate the engine for every request: too slow and battery-inefficient
+- Initialize on the UI thread: risks visible freezes
+
+## Camera Capture Strategy
+
+**Decision**: Use CameraX for capture and allow a single-photo logging flow that can
+immediately hand off the image to on-device inference.
+
+**Rationale**: CameraX is the most direct Android-native choice for a simple capture
+experience with predictable lifecycle handling. It supports the "take a photo and log
+it" workflow without custom camera plumbing.
+
+**Alternatives considered**:
+- Implicit camera intents only: less control over the fast capture flow
+- Gallery-only import: does not satisfy the primary "make a photo" path
 
 ## Calorie Budget Calculation
 
-**Decision**: Calculate the daily calorie budget from onboarding inputs using the
-Mifflin-St Jeor equation plus lifestyle activity adjustment.
+**Decision**: Use the Mifflin-St Jeor equation with an activity multiplier derived
+from the selected lifestyle level.
 
-**Rationale**: The user explicitly asked for "well known formulas." Mifflin-St Jeor
-is a common, defensible formula and requires a concrete onboarding set of age, sex,
-weight, height, and lifestyle activity level. This keeps the estimate predictable,
-explainable, and testable.
+**Rationale**: This was already clarified in the spec and stays appropriate in the
+Android implementation. The formula is common, deterministic, and easy to test.
 
 **Alternatives considered**:
-- Static calorie targets: too inaccurate across different users.
-- Unspecified "recognized formula": too ambiguous for consistent implementation.
-- Highly customized nutrition coaching logic: outside scope for a minimal tracker.
+- Static targets: too crude
+- Changing to another formula: unnecessary because the spec is already explicit
 
-## Low-Confidence Estimation Handling
+## Low-Confidence Handling
 
-**Decision**: When AI estimation confidence is not high, show the detected food and
-ask the user to confirm it with a yes-or-no answer before saving.
+**Decision**: High-confidence estimates save silently; non-high-confidence estimates
+must show the detected food and require a yes/no confirmation before persistence.
 
-**Rationale**: This preserves the fast silent-by-default flow for high-confidence
-results while adding a minimal guardrail for ambiguous photos. If the user rejects
-the detected food, the app asks for another photo rather than silently saving bad
-data.
+**Rationale**: This preserves the product's minimal primary flow while protecting the
+daily log from obviously ambiguous detections. A rejected detection routes directly to
+retake rather than opening a manual meal editor.
 
 **Alternatives considered**:
-- Always require user review: too much friction for the normal path.
-- Always save low-confidence results: too likely to pollute calorie history.
-- Fall back to manual meal entry: outside the intended minimal workflow.
-
-## Profile Change Budget History
-
-**Decision**: Apply budget changes from the day of profile change onward and do not
-rewrite earlier days.
-
-**Rationale**: Historical summaries should remain faithful to the budget in effect
-when those days were logged. Forward-only changes also simplify reasoning about
-trend history and reduce surprising retroactive changes.
-
-**Alternatives considered**:
-- Recalculate all historical days after every profile change: confusing and harder to validate.
-- Ask the user to choose on every change: unnecessary complexity for a personal tool.
-
-## Screen Model
-
-**Decision**: Keep the experience to four primary screens: onboarding, capture/log,
-today summary, and trends.
-
-**Rationale**: This directly matches the requested functionality and keeps navigation
-and implementation simple. Edit and delete actions remain subordinate states rather
-than full additional product areas.
-
-**Alternatives considered**:
-- Rich meal management and coaching dashboards: unnecessary for the stated goal.
-- Hidden multi-step food workflows: conflicts with the "silently track" requirement.
+- Always review before save: too much friction
+- Always save low-confidence estimates: too likely to corrupt data
 
 ## Testing Strategy
 
-**Decision**: Require unit tests for calculation and aggregation logic, integration
-tests for persistence and state updates, and end-to-end tests for the core user flows.
+**Decision**: Use unit tests for formula and aggregation logic, Room/integration
+tests for persistence rules, and Android UI tests for the end-to-end user flows.
 
-**Rationale**: The constitution requires functionality tests to exist and pass before
-completion. The riskiest behavior in this feature is not rendering but calculation,
-state propagation, and the photo-to-log workflow.
+**Rationale**: The constitution requires functionality tests for each behavior. The
+highest-risk areas are budget math, forward-only budget periods, entry mutations, and
+the low-confidence confirmation branch.
 
 **Alternatives considered**:
-- Manual verification only: violates the constitution.
-- End-to-end only: misses edge cases in calorie calculations and aggregation rules.
+- Manual verification only: violates the constitution
+- UI tests only: too slow and too weak for calculation-heavy logic

@@ -1,0 +1,136 @@
+package com.dreef3.weightlossapp.app
+
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoGraph
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.features.capture.FoodCaptureScreenRoute
+import com.dreef3.weightlossapp.features.onboarding.OnboardingScreenRoute
+import com.dreef3.weightlossapp.features.onboarding.ProfileEditScreen
+import com.dreef3.weightlossapp.features.summary.TodaySummaryScreenRoute
+import com.dreef3.weightlossapp.features.trends.TrendsScreenRoute
+
+private data class BottomDestination(
+    val route: String,
+    val label: String,
+    val icon: @Composable () -> Unit,
+)
+
+private val BottomDestinations = listOf(
+    BottomDestination(
+        route = AppDestinations.Home,
+        label = "Today",
+        icon = { Icon(Icons.Outlined.Home, contentDescription = null) },
+    ),
+    BottomDestination(
+        route = AppDestinations.Trends,
+        label = "Trends",
+        icon = { Icon(Icons.Outlined.AutoGraph, contentDescription = null) },
+    ),
+    BottomDestination(
+        route = AppDestinations.Profile,
+        label = "Profile",
+        icon = { Icon(Icons.Outlined.Person, contentDescription = null) },
+    ),
+)
+
+@Composable
+fun AppNavHost(
+    appStateViewModel: AppStateViewModel,
+) {
+    val navController = rememberNavController()
+    val state by appStateViewModel.state.collectAsStateWithLifecycle()
+
+    if (!state.isReady) {
+        CircularProgressIndicator()
+        return
+    }
+
+    val startDestination = if (state.hasProfile) AppDestinations.Home else AppDestinations.Onboarding
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = backStackEntry?.destination
+    val showBottomBar = state.hasProfile && currentDestination?.route in BottomDestinations.map { it.route }
+
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar {
+                    BottomDestinations.forEach { destination ->
+                        val selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                navController.navigate(destination.route) {
+                                    launchSingleTop = true
+                                    restoreState = true
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                }
+                            },
+                            icon = destination.icon,
+                            label = { Text(destination.label) },
+                        )
+                    }
+                }
+            }
+        },
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = startDestination,
+            modifier = Modifier.padding(innerPadding),
+        ) {
+            composable(AppDestinations.Onboarding) {
+                OnboardingScreenRoute(
+                    container = AppContainer.instance,
+                    onCompleted = {
+                        navController.navigate(AppDestinations.Home) {
+                            popUpTo(AppDestinations.Onboarding) { inclusive = true }
+                        }
+                    },
+                )
+            }
+            composable(AppDestinations.Home) {
+                TodaySummaryScreenRoute(
+                    container = AppContainer.instance,
+                    onNavigateToTrends = { navController.navigate(AppDestinations.Trends) },
+                )
+            }
+            composable(AppDestinations.Capture) {
+                FoodCaptureScreenRoute(
+                    container = AppContainer.instance,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(AppDestinations.Trends) {
+                TrendsScreenRoute(
+                    container = AppContainer.instance,
+                )
+            }
+            composable(AppDestinations.Profile) {
+                ProfileEditScreen(
+                    container = AppContainer.instance,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+    }
+}

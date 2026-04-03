@@ -22,18 +22,17 @@ those tests part of the completion criteria.
 
 ## Path Conventions
 
-- **Web app**: `frontend/src/`, `frontend/tests/`
-- Paths below assume the single frontend PWA structure defined in plan.md
+- **Mobile app**: `android/app/src/main/java/com/dreef3/weightlossapp/` and test files under `android/app/src/test/java/com/dreef3/weightlossapp/` or `android/app/src/androidTest/java/com/dreef3/weightlossapp/`
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Project initialization and baseline tooling
+**Purpose**: Create the Android project, baseline build config, and test scaffolding
 
-- [ ] T001 Create the PWA project structure in `frontend/` with `frontend/src/`, `frontend/public/`, and `frontend/tests/`
-- [ ] T002 Initialize the TypeScript React/Vite application configuration in `frontend/package.json`, `frontend/tsconfig.json`, `frontend/vite.config.ts`, and `frontend/index.html`
-- [ ] T003 [P] Configure the PWA shell and manifest in `frontend/public/manifest.webmanifest` and `frontend/public/icons/`
-- [ ] T004 [P] Configure the test toolchain in `frontend/vitest.config.ts`, `frontend/playwright.config.ts`, and `frontend/tests/setup.ts`
-- [ ] T005 [P] Configure linting and formatting in `frontend/eslint.config.js` and `frontend/.prettierrc`
+- [X] T001 Create the Android Gradle project structure in `android/settings.gradle.kts`, `android/build.gradle.kts`, `android/gradle.properties`, and `android/app/build.gradle.kts`
+- [X] T002 Create the application manifest, app entry point, and Compose theme scaffold in `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/java/com/dreef3/weightlossapp/app/MainActivity.kt`, and `android/app/src/main/java/com/dreef3/weightlossapp/app/ui/theme/`
+- [X] T003 [P] Configure unit and instrumentation test runners in `android/app/src/test/java/com/dreef3/weightlossapp/` and `android/app/src/androidTest/java/com/dreef3/weightlossapp/`
+- [X] T004 [P] Add model/runtime asset placeholders and packaging config in `android/app/src/main/assets/` and `android/app/build.gradle.kts`
+- [X] T005 [P] Document Android setup and Gradle commands in `README.md`
 
 ---
 
@@ -43,13 +42,15 @@ those tests part of the completion criteria.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Define shared domain schemas and types in `frontend/src/lib/types.ts` and `frontend/src/lib/schemas.ts`
-- [ ] T007 Implement IndexedDB storage setup and repositories in `frontend/src/services/storage/db.ts`, `frontend/src/services/storage/profile-repository.ts`, and `frontend/src/services/storage/food-entry-repository.ts`
-- [ ] T008 [P] Implement Mifflin-St Jeor budget calculation utilities in `frontend/src/services/budget/calculate-budget.ts`
-- [ ] T009 [P] Implement daily and rolling aggregation utilities with forward-only budget history rules in `frontend/src/services/budget/summary-calculations.ts`
-- [ ] T010 Implement the AI estimation client contract, confidence handling, and error mapping in `frontend/src/services/ai/estimation-client.ts`
-- [ ] T011 Implement app routing, first-run gating, and shared layout in `frontend/src/app/App.tsx`, `frontend/src/routes/index.tsx`, and `frontend/src/components/AppShell.tsx`
-- [ ] T012 [P] Implement reusable date, image, and local-state helpers in `frontend/src/lib/date.ts`, `frontend/src/lib/images.ts`, and `frontend/src/lib/storage-state.ts`
+- [X] T006 Define shared domain models and enums in `android/app/src/main/java/com/dreef3/weightlossapp/domain/model/UserProfile.kt`, `android/app/src/main/java/com/dreef3/weightlossapp/domain/model/DailyCalorieBudgetPeriod.kt`, `android/app/src/main/java/com/dreef3/weightlossapp/domain/model/FoodEntry.kt`, and `android/app/src/main/java/com/dreef3/weightlossapp/domain/model/TrendWindow.kt`
+- [X] T007 Implement Room entities, DAOs, and database wiring in `android/app/src/main/java/com/dreef3/weightlossapp/data/local/entity/`, `android/app/src/main/java/com/dreef3/weightlossapp/data/local/dao/`, and `android/app/src/main/java/com/dreef3/weightlossapp/data/local/AppDatabase.kt`
+- [X] T008 [P] Implement DataStore preferences for first-run and lightweight settings in `android/app/src/main/java/com/dreef3/weightlossapp/data/preferences/AppPreferences.kt`
+- [X] T009 [P] Implement Mifflin-St Jeor budget calculation and activity multiplier utilities in `android/app/src/main/java/com/dreef3/weightlossapp/domain/calculation/CalorieBudgetCalculator.kt`
+- [X] T010 [P] Implement daily summary and rolling trend aggregation utilities in `android/app/src/main/java/com/dreef3/weightlossapp/domain/calculation/SummaryAggregator.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/domain/calculation/TrendAggregator.kt`
+- [X] T011 Implement repository interfaces and Room-backed repositories in `android/app/src/main/java/com/dreef3/weightlossapp/domain/repository/` and `android/app/src/main/java/com/dreef3/weightlossapp/data/repository/`
+- [X] T012 [P] Implement app navigation shell and first-run gating in `android/app/src/main/java/com/dreef3/weightlossapp/app/AppNavHost.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/app/AppStateViewModel.kt`
+- [X] T013 Implement the on-device inference adapter contract and error model in `android/app/src/main/java/com/dreef3/weightlossapp/inference/FoodEstimationEngine.kt`, `android/app/src/main/java/com/dreef3/weightlossapp/inference/FoodEstimationResult.kt`, and `android/app/src/main/java/com/dreef3/weightlossapp/inference/FoodEstimationError.kt`
+- [X] T014 [P] Implement camera/photo file helpers and local date utilities in `android/app/src/main/java/com/dreef3/weightlossapp/app/media/PhotoStorage.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/app/time/LocalDateProvider.kt`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -57,26 +58,26 @@ those tests part of the completion criteria.
 
 ## Phase 3: User Story 1 - Set Up My Daily Budget (Priority: P1) 🎯 MVP
 
-**Goal**: Let a first-time user enter onboarding data and receive a stored daily calorie budget based on the Mifflin-St Jeor equation
+**Goal**: Let a first-time user enter onboarding data and receive a stored daily calorie budget that can later be updated without rewriting history
 
-**Independent Test**: A new user can enter first name, weight, height, age, sex, and lifestyle activity level, receive a stored daily calorie budget, and later update profile values so the new budget applies from the change date onward without rewriting earlier days.
+**Independent Test**: A new user can complete onboarding with first name, weight, height, age, sex, and activity level, then later edit profile values and see a new budget apply only from the day of change onward.
 
 ### Tests for User Story 1 (REQUIRED) ⚠️
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T013 [P] [US1] Add unit tests for Mifflin-St Jeor budget calculation in `frontend/tests/unit/budget-calculation.test.ts`
-- [ ] T014 [P] [US1] Add integration tests for onboarding persistence and active budget creation in `frontend/tests/integration/onboarding-persistence.test.tsx`
-- [ ] T015 [P] [US1] Add integration tests for forward-only budget updates after profile changes in `frontend/tests/integration/profile-budget-history.test.tsx`
-- [ ] T016 [P] [US1] Add end-to-end onboarding flow coverage in `frontend/tests/contract/onboarding-flow.spec.ts`
+- [X] T015 [P] [US1] Add unit tests for Mifflin-St Jeor calculation and activity mapping in `android/app/src/test/java/com/dreef3/weightlossapp/domain/calculation/CalorieBudgetCalculatorTest.kt`
+- [X] T016 [P] [US1] Add Room tests for onboarding persistence and active budget-period creation in `android/app/src/test/java/com/dreef3/weightlossapp/data/repository/ProfileRepositoryTest.kt`
+- [X] T017 [P] [US1] Add Room tests for forward-only budget updates after profile changes in `android/app/src/test/java/com/dreef3/weightlossapp/data/repository/BudgetHistoryRepositoryTest.kt`
+- [X] T018 [P] [US1] Add Compose instrumentation coverage for onboarding completion and returning-user bypass in `android/app/src/androidTest/java/com/dreef3/weightlossapp/features/onboarding/OnboardingFlowTest.kt`
 
 ### Implementation for User Story 1
 
-- [ ] T017 [P] [US1] Create onboarding form state and validation for first name, weight, height, age, sex, and lifestyle in `frontend/src/features/onboarding/onboarding-form.ts` and `frontend/src/features/onboarding/onboarding-schema.ts`
-- [ ] T018 [P] [US1] Create onboarding screen components in `frontend/src/features/onboarding/OnboardingPage.tsx` and `frontend/src/features/onboarding/OnboardingFields.tsx`
-- [ ] T019 [US1] Implement onboarding submission and budget activation logic in `frontend/src/features/onboarding/onboarding-service.ts`
-- [ ] T020 [US1] Connect onboarding routing and first-run redirect behavior in `frontend/src/routes/onboarding.tsx` and `frontend/src/app/App.tsx`
-- [ ] T021 [US1] Add profile edit flow with forward-only budget change handling in `frontend/src/features/onboarding/ProfileSettingsPage.tsx`
+- [X] T019 [P] [US1] Create onboarding UI state, validators, and mappers in `android/app/src/main/java/com/dreef3/weightlossapp/features/onboarding/OnboardingFormState.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/features/onboarding/OnboardingValidator.kt`
+- [X] T020 [P] [US1] Create onboarding screen composables in `android/app/src/main/java/com/dreef3/weightlossapp/features/onboarding/OnboardingScreen.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/features/onboarding/OnboardingFields.kt`
+- [X] T021 [US1] Implement onboarding ViewModel and submission flow in `android/app/src/main/java/com/dreef3/weightlossapp/features/onboarding/OnboardingViewModel.kt`
+- [X] T022 [US1] Implement profile save, budget-period creation, and forward-only history logic in `android/app/src/main/java/com/dreef3/weightlossapp/domain/usecase/SaveUserProfileUseCase.kt`
+- [X] T023 [US1] Add profile edit screen and navigation path in `android/app/src/main/java/com/dreef3/weightlossapp/features/onboarding/ProfileEditScreen.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/app/AppNavHost.kt`
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -84,25 +85,26 @@ those tests part of the completion criteria.
 
 ## Phase 4: User Story 2 - Log Food From a Photo (Priority: P1)
 
-**Goal**: Let the user capture or choose a food photo, save high-confidence estimates silently, and route low-confidence estimates through a confirmation-or-retake step
+**Goal**: Let the user capture a food photo, save high-confidence estimates silently, and route non-high-confidence results through confirmation or retake
 
-**Independent Test**: A user can save a high-confidence photo result immediately, and a low-confidence result asks whether the detected food is correct; answering no requires another photo and does not save the current result.
+**Independent Test**: A user can capture a food photo, get a saved entry immediately when confidence is high, and when confidence is not high they must confirm the detected food or retake without saving.
 
 ### Tests for User Story 2 (REQUIRED) ⚠️
 
-- [ ] T022 [P] [US2] Add contract tests for the AI estimation client response, detected-food label, and error mapping in `frontend/tests/contract/ai-estimation-client.test.ts`
-- [ ] T023 [P] [US2] Add integration tests for high-confidence save, low-confidence confirmation, and retake flows in `frontend/tests/integration/food-entry-confidence-flow.test.tsx`
-- [ ] T024 [P] [US2] Add integration tests for create, edit, and delete food-entry mutations in `frontend/tests/integration/food-entry-lifecycle.test.tsx`
-- [ ] T025 [P] [US2] Add end-to-end photo logging coverage for both confirmation branches in `frontend/tests/contract/photo-log-flow.spec.ts`
+- [X] T024 [P] [US2] Add unit tests for the inference adapter response and error mapping in `android/app/src/test/java/com/dreef3/weightlossapp/inference/FoodEstimationEngineTest.kt`
+- [X] T025 [P] [US2] Add repository tests for create, edit, delete, and rejected-entry behavior in `android/app/src/test/java/com/dreef3/weightlossapp/data/repository/FoodEntryRepositoryTest.kt`
+- [ ] T026 [P] [US2] Add instrumentation coverage for high-confidence save and low-confidence confirmation branches in `android/app/src/androidTest/java/com/dreef3/weightlossapp/features/capture/FoodCaptureFlowTest.kt`
+- [ ] T027 [P] [US2] Add instrumentation coverage for retake-without-save and entry correction in `android/app/src/androidTest/java/com/dreef3/weightlossapp/features/capture/FoodCaptureRetakeTest.kt`
 
 ### Implementation for User Story 2
 
-- [ ] T026 [P] [US2] Create food-entry domain types and mappers including detected-food and confidence fields in `frontend/src/features/food-log/food-entry-types.ts`
-- [ ] T027 [P] [US2] Create capture, result, and confidence-confirmation components in `frontend/src/features/food-log/FoodCapturePage.tsx`, `frontend/src/features/food-log/FoodCaptureForm.tsx`, `frontend/src/features/food-log/FoodEstimateResult.tsx`, and `frontend/src/features/food-log/FoodConfidencePrompt.tsx`
-- [ ] T028 [US2] Implement photo submission, AI estimation, silent-save, and low-confidence confirmation flow in `frontend/src/features/food-log/food-log-service.ts`
-- [ ] T029 [US2] Implement retake behavior and no-save handling for rejected low-confidence results in `frontend/src/features/food-log/food-confidence-mutations.ts`
-- [ ] T030 [US2] Implement entry edit and delete actions in `frontend/src/features/food-log/FoodEntryEditor.tsx` and `frontend/src/features/food-log/food-entry-mutations.ts`
-- [ ] T031 [US2] Add user-facing recovery states for unreadable images and estimation failures in `frontend/src/features/food-log/FoodEstimateErrorState.tsx`
+- [X] T028 [P] [US2] Create capture UI state and camera permission handling in `android/app/src/main/java/com/dreef3/weightlossapp/features/capture/CaptureUiState.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/features/capture/CameraPermissionState.kt`
+- [X] T029 [P] [US2] Create CameraX capture screen composables in `android/app/src/main/java/com/dreef3/weightlossapp/features/capture/FoodCaptureScreen.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/features/capture/CameraPreview.kt`
+- [X] T030 [P] [US2] Implement LiteRT-LM backed engine initialization and inference execution in `android/app/src/main/java/com/dreef3/weightlossapp/inference/LiteRtFoodEstimationEngine.kt`
+- [X] T031 [US2] Implement capture orchestration and silent-save flow in `android/app/src/main/java/com/dreef3/weightlossapp/features/capture/FoodCaptureViewModel.kt`
+- [X] T032 [US2] Implement low-confidence confirmation and retake-without-save behavior in `android/app/src/main/java/com/dreef3/weightlossapp/features/capture/ConfidenceConfirmationDialog.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/domain/usecase/ConfirmFoodEstimateUseCase.kt`
+- [X] T033 [US2] Implement edit and delete entry flows in `android/app/src/main/java/com/dreef3/weightlossapp/features/capture/FoodEntryEditorSheet.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/domain/usecase/UpdateFoodEntryUseCase.kt`
+- [X] T034 [US2] Add unreadable-image, model-unavailable, and inference-timeout recovery UI in `android/app/src/main/java/com/dreef3/weightlossapp/features/capture/CaptureErrorState.kt`
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -110,22 +112,22 @@ those tests part of the completion criteria.
 
 ## Phase 5: User Story 3 - See Today's Remaining Calories (Priority: P2)
 
-**Goal**: Show a clear home screen with consumed calories, remaining calories, and budget status for today
+**Goal**: Show today's consumed calories, remaining calories, and budget status with immediate updates after entry changes
 
-**Independent Test**: After onboarding and at least one logged meal, the user can open the home screen and see accurate daily totals that react to entry edits, deletions, and the current day's active budget.
+**Independent Test**: After onboarding and at least one logged entry, the user can open the home screen and see accurate consumed and remaining calories that update after create, edit, and delete operations.
 
 ### Tests for User Story 3 (REQUIRED) ⚠️
 
-- [ ] T032 [P] [US3] Add unit tests for daily summary aggregation with active daily budgets in `frontend/tests/unit/daily-summary.test.ts`
-- [ ] T033 [P] [US3] Add integration tests for summary updates after food-entry mutations in `frontend/tests/integration/daily-summary-updates.test.tsx`
-- [ ] T034 [P] [US3] Add end-to-end home-summary coverage in `frontend/tests/contract/daily-summary.spec.ts`
+- [X] T035 [P] [US3] Add unit tests for daily summary aggregation with active budget periods in `android/app/src/test/java/com/dreef3/weightlossapp/domain/calculation/DailySummaryAggregatorTest.kt`
+- [X] T036 [P] [US3] Add repository or ViewModel tests for live summary updates after entry mutations in `android/app/src/test/java/com/dreef3/weightlossapp/features/summary/TodaySummaryViewModelTest.kt`
+- [ ] T037 [P] [US3] Add instrumentation coverage for home-screen totals, empty state, and over-budget state in `android/app/src/androidTest/java/com/dreef3/weightlossapp/features/summary/TodaySummaryScreenTest.kt`
 
 ### Implementation for User Story 3
 
-- [ ] T035 [P] [US3] Create summary view components in `frontend/src/features/summary/SummaryPage.tsx` and `frontend/src/features/summary/SummaryCards.tsx`
-- [ ] T036 [US3] Implement today's summary selectors and active-budget state composition in `frontend/src/features/summary/summary-service.ts`
-- [ ] T037 [US3] Connect the home route and live summary refresh behavior in `frontend/src/routes/home.tsx`
-- [ ] T038 [US3] Add empty-state and over-budget variants in `frontend/src/features/summary/SummaryEmptyState.tsx` and `frontend/src/features/summary/OverBudgetNotice.tsx`
+- [X] T038 [P] [US3] Create today's summary composables in `android/app/src/main/java/com/dreef3/weightlossapp/features/summary/TodaySummaryScreen.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/features/summary/SummaryCards.kt`
+- [X] T039 [US3] Implement today's summary ViewModel and selectors in `android/app/src/main/java/com/dreef3/weightlossapp/features/summary/TodaySummaryViewModel.kt`
+- [X] T040 [US3] Add empty-state, over-budget, and limited-confidence UI variants in `android/app/src/main/java/com/dreef3/weightlossapp/features/summary/SummaryEmptyState.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/features/summary/OverBudgetNotice.kt`
+- [X] T041 [US3] Connect the home destination and summary refresh wiring in `android/app/src/main/java/com/dreef3/weightlossapp/app/AppNavHost.kt`
 
 **Checkpoint**: At this point, User Stories 1, 2, and 3 should work independently
 
@@ -133,21 +135,21 @@ those tests part of the completion criteria.
 
 ## Phase 6: User Story 4 - Review Recent Trends (Priority: P3)
 
-**Goal**: Show simple 7-day and 30-day calorie summaries with partial-history handling and preserved historical budget values
+**Goal**: Show simple 7-day and 30-day summaries with partial-history messaging and preserved historical budget values
 
-**Independent Test**: A user with multi-day entries can open the trends screen, switch between 7-day and 30-day windows, and see totals and averages derived from stored entries and the budgets that were active on each historical day.
+**Independent Test**: A user with multiple days of data can open the trends screen within two actions from the main screen, switch windows, and see totals and averages based on the budget active on each historical day.
 
 ### Tests for User Story 4 (REQUIRED) ⚠️
 
-- [ ] T039 [P] [US4] Add unit tests for rolling-window calculations with preserved historical budgets in `frontend/tests/unit/trend-window.test.ts`
-- [ ] T040 [P] [US4] Add integration tests for partial-history windows and profile-change history behavior in `frontend/tests/integration/trends-view.test.tsx`
-- [ ] T041 [P] [US4] Add end-to-end trends screen coverage in `frontend/tests/contract/trends-flow.spec.ts`
+- [X] T042 [P] [US4] Add unit tests for 7-day and 30-day aggregation with historical budget preservation in `android/app/src/test/java/com/dreef3/weightlossapp/domain/calculation/TrendAggregatorTest.kt`
+- [X] T043 [P] [US4] Add ViewModel tests for partial-history and window switching behavior in `android/app/src/test/java/com/dreef3/weightlossapp/features/trends/TrendsViewModelTest.kt`
+- [ ] T044 [P] [US4] Add instrumentation coverage for trends access within two actions and partial-history messaging in `android/app/src/androidTest/java/com/dreef3/weightlossapp/features/trends/TrendsScreenTest.kt`
 
 ### Implementation for User Story 4
 
-- [ ] T042 [P] [US4] Create trends screen components in `frontend/src/features/trends/TrendsPage.tsx`, `frontend/src/features/trends/TrendWindowToggle.tsx`, and `frontend/src/features/trends/TrendSummaryCards.tsx`
-- [ ] T043 [US4] Implement 7-day and 30-day aggregation selectors with preserved historical budget values in `frontend/src/features/trends/trends-service.ts`
-- [ ] T044 [US4] Connect trends routing and partial-history messaging in `frontend/src/routes/trends.tsx`
+- [X] T045 [P] [US4] Create trends composables and window toggle UI in `android/app/src/main/java/com/dreef3/weightlossapp/features/trends/TrendsScreen.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/features/trends/TrendWindowToggle.kt`
+- [X] T046 [US4] Implement trends ViewModel and rolling summary selectors in `android/app/src/main/java/com/dreef3/weightlossapp/features/trends/TrendsViewModel.kt`
+- [X] T047 [US4] Connect the trends destination and partial-history notice wiring in `android/app/src/main/java/com/dreef3/weightlossapp/app/AppNavHost.kt`
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -157,10 +159,10 @@ those tests part of the completion criteria.
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T045 [P] Add seed fixtures and reusable test data builders in `frontend/tests/fixtures/profile-fixtures.ts` and `frontend/tests/fixtures/food-entry-fixtures.ts`
-- [ ] T046 Improve installability and mobile metadata in `frontend/public/manifest.webmanifest` and `frontend/index.html`
-- [ ] T047 [P] Document local setup and validation commands in `README.md`
-- [ ] T048 Run the quickstart validation and capture any fixes in `specs/001-calorie-photo-tracker/quickstart.md`
+- [ ] T048 [P] Add shared test fixtures and builders in `android/app/src/test/java/com/dreef3/weightlossapp/testutil/ProfileFixtures.kt` and `android/app/src/test/java/com/dreef3/weightlossapp/testutil/FoodEntryFixtures.kt`
+- [ ] T049 Tune startup and inference initialization timing in `android/app/src/main/java/com/dreef3/weightlossapp/app/AppInitializer.kt` and `android/app/src/main/java/com/dreef3/weightlossapp/inference/LiteRtFoodEstimationEngine.kt`
+- [ ] T050 [P] Update developer setup and validation notes in `README.md` and `/home/ae/weight-loss-app/specs/001-calorie-photo-tracker/quickstart.md`
+- [ ] T051 Run the quickstart validation flows and record any required follow-up in `/home/ae/weight-loss-app/specs/001-calorie-photo-tracker/quickstart.md`
 
 ---
 
@@ -171,48 +173,50 @@ those tests part of the completion criteria.
 - **Setup (Phase 1)**: No dependencies - can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
 - **User Stories (Phase 3+)**: All depend on Foundational phase completion
-  - User stories can then proceed in parallel if needed, though priority order is still recommended
-  - Or sequentially in priority order (US1/US2 as P1, then US3, then US4)
+  - US1 and US2 can proceed in parallel after Foundational
+  - US3 depends on working onboarding and entry flows
+  - US4 depends on working history and summary data
 - **Polish (Final Phase)**: Depends on all desired user stories being complete
 
 ### User Story Dependencies
 
-- **User Story 1 (P1)**: Can start after Foundational (Phase 2) - No dependencies on other stories
-- **User Story 2 (P1)**: Can start after Foundational (Phase 2) - Depends on the shared AI client and benefits from US1 for an active budget, but can be implemented independently with seeded budget state during development
-- **User Story 3 (P2)**: Depends on US1 for an active budget and US2 for meal entries to be meaningful
-- **User Story 4 (P3)**: Depends on US1 for historical budget data and US2 for multi-day entry history
+- **User Story 1 (P1)**: Can start after Foundational - no dependency on other stories
+- **User Story 2 (P1)**: Can start after Foundational - benefits from US1 for active budget state but can be developed with seeded local profile data
+- **User Story 3 (P2)**: Depends on US1 for budget state and US2 for meaningful entry totals
+- **User Story 4 (P3)**: Depends on US1 for historical budget periods and US2 for multi-day food history
 
 ### Within Each User Story
 
 - Tests MUST be written and FAIL before implementation
-- Story-specific domain types and components before service orchestration
-- Services before route wiring
-- Core implementation before recovery-state and polish work
-- Story complete before moving to the next priority if delivering incrementally
+- Domain and UI state before ViewModel orchestration
+- ViewModels and use cases before navigation wiring
+- Core behavior before error-state and polish work
+- Each story must pass its required functionality tests before the next slice is considered complete
 
 ### Parallel Opportunities
 
 - `T003`, `T004`, and `T005` can run in parallel during setup
-- `T008`, `T009`, and `T012` can run in parallel during foundational work
-- Within US1, `T013`, `T014`, `T015`, `T016`, `T017`, and `T018` can run in parallel
-- Within US2, `T022`, `T023`, `T024`, `T025`, `T026`, and `T027` can run in parallel
-- Within US3, `T032`, `T033`, `T034`, and `T035` can run in parallel
-- Within US4, `T039`, `T040`, `T041`, and `T042` can run in parallel
+- `T008`, `T009`, `T010`, `T012`, and `T014` can run in parallel during foundational work
+- Within US1, `T015`, `T016`, `T017`, `T018`, `T019`, and `T020` can run in parallel
+- Within US2, `T024`, `T025`, `T026`, `T027`, `T028`, `T029`, and `T030` can run in parallel
+- Within US3, `T035`, `T036`, `T037`, and `T038` can run in parallel
+- Within US4, `T042`, `T043`, `T044`, and `T045` can run in parallel
 
 ---
 
 ## Parallel Example: User Story 2
 
 ```bash
-# Launch all tests for User Story 2 together:
-Task: "Add contract tests for the AI estimation client response, detected-food label, and error mapping in frontend/tests/contract/ai-estimation-client.test.ts"
-Task: "Add integration tests for high-confidence save, low-confidence confirmation, and retake flows in frontend/tests/integration/food-entry-confidence-flow.test.tsx"
-Task: "Add integration tests for create, edit, and delete food-entry mutations in frontend/tests/integration/food-entry-lifecycle.test.tsx"
-Task: "Add end-to-end photo logging coverage for both confirmation branches in frontend/tests/contract/photo-log-flow.spec.ts"
+# Launch User Story 2 test work together:
+Task: "Add unit tests for the inference adapter response and error mapping in android/app/src/test/java/com/dreef3/weightlossapp/inference/FoodEstimationEngineTest.kt"
+Task: "Add repository tests for create, edit, delete, and rejected-entry behavior in android/app/src/test/java/com/dreef3/weightlossapp/data/repository/FoodEntryRepositoryTest.kt"
+Task: "Add instrumentation coverage for high-confidence save and low-confidence confirmation branches in android/app/src/androidTest/java/com/dreef3/weightlossapp/features/capture/FoodCaptureFlowTest.kt"
+Task: "Add instrumentation coverage for retake-without-save and entry correction in android/app/src/androidTest/java/com/dreef3/weightlossapp/features/capture/FoodCaptureRetakeTest.kt"
 
-# Launch independent UI/domain tasks for User Story 2 together:
-Task: "Create food-entry domain types and mappers including detected-food and confidence fields in frontend/src/features/food-log/food-entry-types.ts"
-Task: "Create capture, result, and confidence-confirmation components in frontend/src/features/food-log/FoodCapturePage.tsx, frontend/src/features/food-log/FoodCaptureForm.tsx, frontend/src/features/food-log/FoodEstimateResult.tsx, and frontend/src/features/food-log/FoodConfidencePrompt.tsx"
+# Launch independent implementation tasks together:
+Task: "Create capture UI state and camera permission handling in android/app/src/main/java/com/dreef3/weightlossapp/features/capture/CaptureUiState.kt and android/app/src/main/java/com/dreef3/weightlossapp/features/capture/CameraPermissionState.kt"
+Task: "Create CameraX capture screen composables in android/app/src/main/java/com/dreef3/weightlossapp/features/capture/FoodCaptureScreen.kt and android/app/src/main/java/com/dreef3/weightlossapp/features/capture/CameraPreview.kt"
+Task: "Implement LiteRT-LM backed engine initialization and inference execution in android/app/src/main/java/com/dreef3/weightlossapp/inference/LiteRtFoodEstimationEngine.kt"
 ```
 
 ---
@@ -222,18 +226,17 @@ Task: "Create capture, result, and confidence-confirmation components in fronten
 ### MVP First (User Story 1 Only)
 
 1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
+2. Complete Phase 2: Foundational
 3. Complete Phase 3: User Story 1
-4. **STOP and VALIDATE**: Test User Story 1 independently
-5. Demo onboarding and forward-only budget update behavior before expanding scope
+4. **STOP and VALIDATE**: Run the US1 tests and verify onboarding plus forward-only budget changes
 
 ### Incremental Delivery
 
-1. Complete Setup + Foundational → Foundation ready
-2. Add User Story 1 → Test independently → Demo
-3. Add User Story 2 → Test independently → Demo
-4. Add User Story 3 → Test independently → Demo
-5. Add User Story 4 → Test independently → Demo
+1. Complete Setup + Foundational
+2. Add User Story 1 → Test independently → Demo onboarding and budget persistence
+3. Add User Story 2 → Test independently → Demo photo logging and confirmation flow
+4. Add User Story 3 → Test independently → Demo today's summary
+5. Add User Story 4 → Test independently → Demo weekly/monthly trends
 6. Finish with polish and quickstart validation
 
 ### Parallel Team Strategy
@@ -244,16 +247,15 @@ With multiple developers:
 2. Once Foundational is done:
    - Developer A: User Story 1
    - Developer B: User Story 2
-   - Developer C: User Story 3 or 4 once dependencies are ready
-3. Stories complete with contract-aligned integration points
+   - Developer C: User Story 3 preparation or shared polish
+3. Merge stories in priority order and keep instrumentation tests green at each checkpoint
 
 ---
 
 ## Notes
 
 - [P] tasks = different files, no dependencies
-- [Story] label maps task to specific user story for traceability
-- Each user story is independently completable and testable once its dependencies are satisfied
-- Functionality tests are explicitly required by the constitution and included for every story
-- Commit after each task or logical group
-- Avoid vague tasks, same-file conflicts, and cross-story coupling that breaks independent validation
+- [Story] labels map tasks to specific user stories for traceability
+- Every user story includes required functionality tests per the constitution
+- The task list follows the Android/Kotlin/Compose plan rather than the earlier web/PWA direction
+- There is still a spec-vs-plan naming mismatch between `LiteRT-RM` in `spec.md` and `LiteRT-LM` in the Android docs and plan; resolve that before implementation if you want fully clean traceability

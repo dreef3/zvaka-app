@@ -2,53 +2,60 @@
 
 ## Goal
 
-Validate the first implementation slice of the calorie tracker PWA: onboarding,
-photo logging, today's summary, and trend summaries.
+Validate the first native Android implementation slice: onboarding, on-device
+photo logging, today's summary, and recent trends.
 
 ## Preconditions
 
-- The frontend PWA project is installed and runnable locally.
-- The AI estimation adapter is configured for a non-production testing environment.
-- Browser storage is clear before the onboarding flow test.
+- The Android project under `android/` is created and syncs successfully.
+- The embedded Gemma 4 E2B model asset and LiteRT-LM runtime are available to the app.
+- An Android emulator or device running Android 14+ is available for UI validation.
+- App data is cleared before the first-run onboarding test.
 
 ## Primary Validation Flow
 
-1. Start the frontend application in development mode.
-2. Open the app in a mobile-sized browser viewport.
-3. Complete onboarding with valid profile inputs.
-4. Confirm the app shows a daily calorie budget and lands on today's summary.
-5. Capture or select a food photo.
-6. Confirm an estimated-calorie food entry is created and today's consumed and
-   remaining calories update immediately.
-7. Repeat the capture flow with a low-confidence test result.
-8. Confirm the app shows the detected food and asks for a yes-or-no confirmation.
-9. Answer no and confirm the app asks for another photo without saving the result.
-10. Edit a created food entry to a new calorie value.
-11. Confirm today's totals update immediately after the edit.
-12. Delete the same entry.
-13. Confirm today's totals return to the pre-entry state.
+1. From the repository root, run `cd android && ./gradlew installDebug`.
+2. Launch the app on an emulator or physical device.
+3. Complete onboarding with valid first name, weight, height, age, sex, and lifestyle values.
+4. Confirm the app shows today's calorie budget after onboarding completes.
+5. Capture a food photo from the main logging flow.
+6. Confirm a high-confidence estimate creates a food entry and immediately updates today's consumed and remaining calories.
+7. Trigger a non-high-confidence estimation case.
+8. Confirm the app shows the detected food and asks for a yes/no confirmation.
+9. Answer `No` and confirm the app requests another photo without saving the rejected result.
+10. Capture again and complete a save path.
+11. Edit the created entry and confirm today's totals update immediately.
+12. Delete the same entry and confirm totals return to the pre-entry state.
 
 ## Trend Validation Flow
 
 1. Seed or create entries across multiple dates.
-2. Open the 7-day summary.
-3. Confirm the window shows total intake, total budget, and average values.
-4. Switch to the 30-day summary.
-5. Confirm the longer window shows the same categories and marks partial history if
-   there are fewer than 30 days of entries.
-6. Update profile inputs so the calorie budget changes on the current day.
-7. Confirm the new budget applies from today onward and earlier days retain their
-   previous budget values in historical summaries.
+2. Open the trends screen from the main screen within two actions.
+3. Confirm the 7-day view shows total intake, total budget, and averages.
+4. Switch to the 30-day view.
+5. Confirm partial history is clearly marked when fewer than 30 days exist.
+6. Update profile values so the budget changes today.
+7. Confirm the new budget applies from today onward and earlier days retain their historical budget values.
 
 ## Required Automated Test Coverage
 
-- Unit tests for calorie-budget calculation inputs and outputs.
-- Unit tests for Mifflin-St Jeor budget calculation inputs and outputs.
-- Unit tests for daily summary and rolling-window aggregation.
-- Integration tests for creating, editing, and deleting `FoodEntry` records.
-- Integration tests for profile updates that change future budget calculations without rewriting history.
-- Integration tests for low-confidence food detection confirmation and retake flows.
-- End-to-end tests for onboarding, food capture, low-confidence confirmation, daily summary update, and trend view access.
+- Unit tests for Mifflin-St Jeor calculation and activity multiplier mapping.
+- Unit tests for daily summary and 7-day/30-day trend aggregation.
+- Room/integration tests for onboarding persistence, budget-period creation, and forward-only budget changes.
+- Integration tests for create/edit/delete `FoodEntry` behavior.
+- Integration tests for low-confidence confirmation and retake-without-save behavior.
+- Compose or instrumentation tests for onboarding, food capture, today's summary, and trends access within two actions.
+
+## Suggested Commands
+
+- `cd android && ./gradlew testDebugUnitTest`
+- `cd android && ./gradlew assembleDebugAndroidTest`
+- `cd android && ./gradlew connectedDebugAndroidTest`
+
+## Validation Notes
+
+- `2026-04-03`: `cd android && ./gradlew testDebugUnitTest` passed in the local environment.
+- `2026-04-03`: `androidTest` source files for onboarding, capture, summary, and trends compile-target coverage were added, but `connectedDebugAndroidTest` still requires an attached emulator or device and was not executed here.
 
 ## Expected Non-Goals for This Slice
 
@@ -57,3 +64,4 @@ photo logging, today's summary, and trend summaries.
 - Social features
 - Premium upsells
 - Multi-user synchronization
+- Cloud sync or backend services

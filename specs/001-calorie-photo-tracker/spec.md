@@ -13,6 +13,7 @@
 - Q: Which calorie formula should the product use? → A: Use the Mifflin-St Jeor equation and add age and sex to onboarding
 - Q: What should happen when the AI cannot estimate calories with high confidence? → A: Ask the user to confirm whether the detected food is correct; if no, require another photo
 - Q: How should profile changes that alter the daily calorie budget affect history? → A: Apply the new budget from the day of change onward; do not rewrite historical days
+- Q: Which platform and AI stack should the initial release use? → A: Build a native Android app in Kotlin with Gradle and use embedded Gemma 4 E2B with LiteRT-LM for on-device food-photo estimation
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -129,6 +130,8 @@ understand at a glance.
 
 - What happens when the food photo is blurry, contains multiple dishes, or the
   calorie estimate is uncertain?
+- What happens when the embedded on-device model is temporarily unavailable or
+  cannot return an estimate on the device?
 - How does the system handle meals logged shortly before or after midnight so they
   count toward the intended day?
 - What happens when a user updates weight, height, or lifestyle after previous
@@ -155,6 +158,10 @@ understand at a glance.
   food entry from that capture flow.
 - **FR-005**: The system MUST estimate calories for a food photo and attach that
   estimate to the created food entry.
+- **FR-005a**: The initial release MUST be a native Android application built with
+  Kotlin and Gradle rather than a PWA or other web-first client.
+- **FR-005b**: The initial release MUST use embedded Gemma 4 E2B with LiteRT-LM
+  for on-device food-photo calorie estimation rather than a remote AI API.
 - **FR-006**: The system MUST record food entries silently by default, without
   requiring premium upsell steps, unnecessary questionnaires, or multi-screen meal
   workflows for the primary logging path when the AI has high confidence in the
@@ -190,7 +197,7 @@ understand at a glance.
 - **Daily Calorie Budget**: The stored per-day intake target derived from the user
   profile and used to calculate remaining calories.
 - **Food Entry**: A dated log item created from a food photo, including the image,
-  estimated calories, timestamp, and any user corrections.
+  estimated calories, timestamp, model confidence state, and any user corrections.
 - **Daily Summary**: The current day's aggregate view of consumed calories, remaining
   calories, and over-budget or under-budget status.
 - **Trend Summary**: A rolling 7-day or 30-day view of intake totals and intake
@@ -216,9 +223,14 @@ understand at a glance.
 
 - The initial release targets a single person tracking their own calorie intake on a
   mobile device, not shared household or coach-managed use.
+- The initial release targets native Android only and is implemented as a Kotlin +
+  Gradle application.
 - The product experience must stay intentionally minimal and avoid subscription
   marketing patterns, premium upsell interruptions, and broad lifestyle features
   outside calorie budgeting and logging.
+- The initial release uses embedded Gemma 4 E2B with LiteRT-LM for on-device food
+  understanding and calorie estimation, with no dependency on a remote AI provider
+  for the primary estimation flow.
 - The daily calorie budget is an estimate for guidance, not medical advice or a
   clinical recommendation.
 - Users may occasionally correct or remove AI-generated calorie estimates when the

@@ -1,0 +1,83 @@
+package com.dreef3.weightlossapp.work
+
+import android.content.Context
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.domain.model.ConfidenceState
+import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
+import com.dreef3.weightlossapp.domain.model.FoodEntry
+import com.dreef3.weightlossapp.domain.model.FoodEntrySource
+import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
+import com.dreef3.weightlossapp.inference.FoodEstimationRequest
+import java.time.Instant
+
+class PhotoProcessingWorker(
+    appContext: Context,
+    params: WorkerParameters,
+) : CoroutineWorker(appContext, params) {
+    override suspend fun doWork(): Result {
+        val entryId = inputData.getLong(KEY_ENTRY_ID, 0L)
+        val imagePath = inputData.getString(KEY_IMAGE_PATH) ?: return Result.failure()
+        val capturedAtEpochMs = inputData.getLong(KEY_CAPTURED_AT_EPOCH_MS, 0L)
+        if (entryId == 0L || capturedAtEpochMs == 0L) {
+            return Result.failure()
+        }
+
+        AppContainer.initialize(applicationContext)
+        val container = AppContainer.instance
+        val capturedAt = Instant.ofEpochMilli(capturedAtEpochMs)
+        val entryDate = container.localDateProvider.dateFor(capturedAt)
+
+        val result = container.foodEstimationEngine.estimate(
+            FoodEstimationRequest(
+                imagePath = imagePath,
+                capturedAtEpochMs = capturedAtEpochMs,
+            ),
+        )
+
+        val entry = result.fold(
+            onSuccess = { estimation ->
+                FoodEntry(
+                    id = entryId,
+                    capturedAt = capturedAt,
+                    entryDate = entryDate,
+                    imagePath = imagePath,
+                    estimatedCalories = estimation.estimatedCalories,
+                    finalCalories = estimation.estimatedCalories,
+                    confidenceState = estimation.confidenceState,
+                    detectedFoodLabel = estimation.detectedFoodLabel,
+                    confidenceNotes = estimation.confidenceNotes,
+                    confirmationStatus = ConfirmationStatus.NotRequired,
+                    source = FoodEntrySource.AiEstimate,
+                    entryStatus = FoodEntryStatus.Ready,
+                )
+            },
+            onFailure = {
+                FoodEntry(
+                    id = entryId,
+                    capturedAt = capturedAt,
+                    entryDate = entryDate,
+                    imagePath = imagePath,
+                    estimatedCalories = 0,
+                    finalCalories = 0,
+                    confidenceState = ConfidenceState.Failed,
+                    detectedFoodLabel = null,
+                    confidenceNotes = "Photo saved. Automatic estimate was not reliable enough, so calories need manual entry.",
+                    confirmationStatus = ConfirmationStatus.NotRequired,
+                    source = FoodEntrySource.AiEstimate,
+                    entryStatus = FoodEntryStatus.NeedsManual,
+                )
+            },
+        )
+
+        container.foodEntryRepository.upsert(entry)
+        return Result.success()
+    }
+
+    companion object {
+        const val KEY_ENTRY_ID = "entry_id"
+        const val KEY_IMAGE_PATH = "image_path"
+        const val KEY_CAPTURED_AT_EPOCH_MS = "captured_at_epoch_ms"
+    }
+}

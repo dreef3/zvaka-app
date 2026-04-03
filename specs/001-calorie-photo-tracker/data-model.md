@@ -2,119 +2,115 @@
 
 ## UserProfile
 
-**Purpose**: Stores the personal inputs required to estimate a daily calorie budget.
+**Purpose**: Stores the personal inputs required to calculate the daily calorie budget.
 
 **Fields**:
-- `id`: stable local identifier
-- `createdAt`: timestamp of initial onboarding completion
-- `updatedAt`: timestamp of latest profile change
+- `id`: single local profile identifier
+- `createdAt`: timestamp of onboarding completion
+- `updatedAt`: timestamp of the latest profile edit
 - `firstName`: short display name
-- `sex`: enum used by the chosen formula if required
-- `dateOfBirth` or `ageYears`: age input used for budget estimation
+- `sex`: enum used by the Mifflin-St Jeor calculation
+- `ageYears`: integer age captured during onboarding
 - `heightCm`: positive integer
 - `weightKg`: positive decimal
-- `activityLevel`: normalized activity classification
-- `goalRate`: desired weight-loss pace or target aggressiveness
-- `goalWeightKg`: optional target weight
+- `activityLevel`: enum `sedentary`, `light`, `moderate`, `active`, `very_active`
 
 **Validation Rules**:
-- Height and weight must be positive and within sane human-entry bounds.
-- Activity level must be one of the defined supported options.
-- Goal rate must stay within a safe, bounded range supported by the product.
+- `firstName` may be blank only if the UI intentionally allows it; otherwise keep it short.
+- `ageYears`, `heightCm`, and `weightKg` must be within sane human-entry bounds.
+- `activityLevel` must be one of the supported enum values.
 
 **Relationships**:
-- One `UserProfile` produces one active `DailyCalorieBudget`.
-- Profile updates may produce a replacement budget calculation for future tracking only.
+- One `UserProfile` owns many `DailyCalorieBudgetPeriod` records over time.
 
-## DailyCalorieBudget
+## DailyCalorieBudgetPeriod
 
-**Purpose**: Stores the estimated calorie target derived from profile data.
+**Purpose**: Stores the calorie budget that applies from a specific local date onward.
 
 **Fields**:
 - `id`: stable local identifier
-- `profileId`: reference to `UserProfile`
-- `caloriesPerDay`: integer calorie target
-- `formulaName`: recognized formula used for calculation
-- `activityMultiplier`: normalized multiplier value used in calculation
-- `goalAdjustment`: calorie delta used to move toward the target goal
-- `effectiveFromDate`: date when this budget becomes active
-- `supersededAt`: optional timestamp when replaced by a new budget
+- `profileId`: foreign key to `UserProfile`
+- `caloriesPerDay`: positive integer
+- `formulaName`: fixed string `mifflin-st-jeor`
+- `activityMultiplier`: decimal multiplier derived from `activityLevel`
+- `effectiveFromDate`: local date when this budget becomes active
+- `createdAt`: timestamp when the period was created
 
 **Validation Rules**:
-- Calories per day must be a positive integer.
-- Exactly one active budget may apply to a given date for summary calculations.
-- A replacement budget may not retroactively rewrite dates before `effectiveFromDate`.
+- Only one budget period may be active for a given local day.
+- New periods must not rewrite or delete historical periods that were already effective.
+- `effectiveFromDate` for a profile edit is the local day of the saved change.
 
 **Relationships**:
-- Many `DailySummary` and `TrendSummary` calculations reference the active budget.
+- One `DailyCalorieBudgetPeriod` may apply to many `FoodEntry` and `DailySummary` calculations for matching dates.
 
 ## FoodEntry
 
-**Purpose**: Represents one logged eating event created from a food photo.
+**Purpose**: Represents one logged meal created from a captured food photo.
 
 **Fields**:
 - `id`: stable local identifier
-- `capturedAt`: timestamp the food was logged
-- `entryDate`: local calendar day used for daily aggregation
-- `imageUri`: local browser-managed image reference or blob key
-- `estimatedCalories`: integer returned by the AI estimator
-- `finalCalories`: integer used in totals after optional user correction
-- `confidenceLabel`: optional normalized confidence bucket
-- `detectedFoodLabel`: short AI description of the food it believes is in the photo
-- `confidenceNotes`: optional plain-language explanation of uncertainty
-- `source`: enum with values such as `ai-estimate` and `user-corrected`
-- `notes`: optional short user note
-- `deletedAt`: optional soft-delete timestamp
+- `capturedAt`: timestamp of image capture
+- `entryDate`: local date used for aggregation
+- `imagePath`: app-private file path or URI token for the stored image
+- `estimatedCalories`: integer produced by the model
+- `finalCalories`: integer used in totals after optional correction
+- `confidenceState`: enum `high`, `non_high`, `failed`
+- `detectedFoodLabel`: short model description shown in confirmation prompts
+- `confidenceNotes`: optional explanation of ambiguity
+- `confirmationStatus`: enum `not_required`, `accepted`, `rejected`
+- `source`: enum `ai_estimate`, `user_corrected`
+- `deletedAt`: nullable timestamp for soft deletion
 
 **Validation Rules**:
-- `finalCalories` must be positive when the entry is active.
-- A deleted entry must be excluded from current totals and trends.
-- `entryDate` must be derived consistently from the user's local time zone rules.
+- Active entries must have `finalCalories > 0`.
+- Entries with `confirmationStatus = rejected` must not be included in totals.
+- Soft-deleted entries must be excluded from daily and trend aggregates.
+- `entryDate` must be derived from the device local time zone at capture/edit time.
 
 **State Transitions**:
-- `captured` -> `estimated`
-- `estimated` -> `pending-confirmation`
-- `pending-confirmation` -> `estimated`
-- `pending-confirmation` -> `rejected`
-- `estimated` -> `corrected`
-- `estimated` -> `deleted`
-- `corrected` -> `deleted`
+- `captured -> estimated_high`
+- `captured -> pending_confirmation`
+- `captured -> failed`
+- `pending_confirmation -> saved`
+- `pending_confirmation -> rejected`
+- `saved -> corrected`
+- `saved -> deleted`
+- `corrected -> deleted`
 
 ## DailySummary
 
-**Purpose**: Represents the current or historical per-day aggregate shown in the main
-summary view.
+**Purpose**: Represents the aggregate shown for one local day on the home screen.
 
 **Fields**:
-- `date`: local calendar day
-- `budgetCalories`: active target for that day
+- `date`: local date
+- `budgetCalories`: active budget for the day
 - `consumedCalories`: sum of active `FoodEntry.finalCalories`
 - `remainingCalories`: `budgetCalories - consumedCalories`
-- `status`: enum `under`, `at`, or `over`
-- `entryCount`: number of active food entries
-- `isPartial`: boolean indicating whether the day or data is incomplete
+- `status`: enum `under`, `at`, `over`
+- `entryCount`: count of active entries
+- `hasLimitedConfidenceEntries`: boolean for visible uncertainty messaging
 
 **Validation Rules**:
-- Aggregates must be recomputed whenever an entry is created, edited, deleted, or a
-  budget becomes effective for the same date.
-- Budget changes affect the date of change onward and do not rewrite earlier daily summaries.
+- Any create/edit/delete operation on a `FoodEntry` must immediately update the derived summary.
+- The summary must use the budget period active for `date`.
 
 ## TrendWindow
 
-**Purpose**: Represents the 7-day or 30-day summary view.
+**Purpose**: Represents the 7-day or 30-day rolling summary.
 
 **Fields**:
-- `windowType`: enum `last7Days` or `last30Days`
-- `startDate`: inclusive date boundary
-- `endDate`: inclusive date boundary
-- `daysIncluded`: number of days with available data in the window
-- `totalConsumedCalories`: aggregate intake over the window
-- `totalBudgetCalories`: aggregate active budget over the window
-- `averageConsumedCalories`: average intake across included days
-- `averageRemainingCalories`: average daily remaining calories across included days
-- `isPartial`: boolean indicating incomplete history for the full requested window
+- `windowType`: enum `last7Days`, `last30Days`
+- `startDate`: inclusive local date
+- `endDate`: inclusive local date
+- `daysIncluded`: number of days represented
+- `totalConsumedCalories`: total intake in the window
+- `totalBudgetCalories`: total budget in the window
+- `averageConsumedCalories`: average intake per included day
+- `averageRemainingCalories`: average remaining calories per included day
+- `isPartial`: whether less than the full requested history exists
 
 **Validation Rules**:
-- Window calculations must use the active budget for each included day.
-- Window calculations must preserve historical budgets that were active on each included day.
-- Partial-history windows must remain viewable and explicitly marked as partial.
+- The active budget for each historical day must come from the budget period effective on that day.
+- Deleted or rejected entries must not contribute to trend totals.
+- Partial windows must remain viewable and clearly labeled.
