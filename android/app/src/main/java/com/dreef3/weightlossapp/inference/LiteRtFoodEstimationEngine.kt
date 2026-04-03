@@ -11,9 +11,12 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.google.ai.edge.litertlm.tool
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.CancellationException
@@ -43,19 +46,20 @@ class LiteRtFoodEstimationEngine(
             val bitmap = BitmapFactory.decodeFile(request.imagePath)
                 ?: throw FoodEstimationException(FoodEstimationError.UnreadableImage)
 
-            val rawResponse = try {
+            val estimationResult = try {
                 val activeEngine = getOrCreateEngine()
-                activeEngine.createConversation(
-                    ConversationConfig(
-                        samplerConfig = SamplerConfig(
-                            topK = DEFAULT_TOP_K,
-                            topP = DEFAULT_TOP_P,
-                            temperature = DEFAULT_TEMPERATURE,
-                        ),
+                var submittedEstimate: ToolFoodEstimate? = null
+                val toolProviders = listOf(
+                    tool(
+                        FoodEstimationTools { estimate ->
+                            submittedEstimate = estimate
+                        },
                     ),
-                ).use { conversation ->
+                )
+                val raw = activeEngine.createToolConversation(toolProviders).use { conversation ->
                     conversation.awaitResponse(bitmap = bitmap)
                 }
+                submittedEstimate?.toResult() ?: parseResponse(raw)
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: FoodEstimationException) {
@@ -64,9 +68,40 @@ class LiteRtFoodEstimationEngine(
                 throw FoodEstimationException(FoodEstimationError.EstimationFailed)
             }
 
-            parseResponse(rawResponse)
+            estimationResult
             }
         }
+
+    @OptIn(ExperimentalApi::class)
+    private fun Engine.createToolConversation(toolProviders: List<com.google.ai.edge.litertlm.ToolProvider>): Conversation {
+        ExperimentalFlags.enableConversationConstrainedDecoding = true
+        return try {
+            createConversation(
+                ConversationConfig(
+                    samplerConfig = SamplerConfig(
+                        topK = DEFAULT_TOP_K,
+                        topP = DEFAULT_TOP_P,
+                        temperature = DEFAULT_TEMPERATURE,
+                    ),
+                    systemInstruction = Contents.of(
+                        listOf(
+                            Content.Text(
+                                """
+                                You analyze a food photo and must call submitFoodEstimate exactly once.
+                                The description must be one short line.
+                                Calories must be a single integer estimate.
+                                Do not answer in free-form text when the tool is available.
+                                """.trimIndent(),
+                            ),
+                        ),
+                    ),
+                    tools = toolProviders,
+                ),
+            )
+        } finally {
+            ExperimentalFlags.enableConversationConstrainedDecoding = false
+        }
+    }
 
     override suspend fun warmUp(): Result<Unit> = withContext(Dispatchers.Default) {
         runCatching {
@@ -175,6 +210,18 @@ class LiteRtFoodEstimationEngine(
         }
 
     private fun parseResponse(raw: String): FoodEstimationResult {
+        val descriptionMatch = Regex("""(?im)^description\s*:\s*(.+)$""").find(raw)
+        val caloriesMatch = Regex("""(?im)^calories\s*:\s*(\d{1,5})$""").find(raw)
+        if (caloriesMatch != null) {
+            return FoodEstimationResult(
+                estimatedCalories = caloriesMatch.groupValues[1].toInt().coerceAtLeast(0),
+                confidenceState = ConfidenceState.High,
+                detectedFoodLabel = descriptionMatch?.groupValues?.get(1)?.trim()?.ifBlank { null },
+                confidenceNotes = null,
+                detectedItems = descriptionMatch?.groupValues?.get(1)?.trim()?.let(::listOf) ?: emptyList(),
+            )
+        }
+
         val directCalories = Regex("""\b\d{1,5}\b""").find(raw)?.value?.toIntOrNull()
         if (directCalories != null) {
             return FoodEstimationResult(
@@ -219,6 +266,15 @@ class LiteRtFoodEstimationEngine(
         return stream.toByteArray()
     }
 
+    private fun ToolFoodEstimate.toResult(): FoodEstimationResult =
+        FoodEstimationResult(
+            estimatedCalories = calories,
+            confidenceState = ConfidenceState.High,
+            detectedFoodLabel = description.ifBlank { null },
+            confidenceNotes = null,
+            detectedItems = description.ifBlank { null }?.let(::listOf) ?: emptyList(),
+        )
+
     companion object {
         private const val TAG = "LiteRtFoodEngine"
         private const val DEFAULT_MAX_TOKENS = 4000
@@ -226,9 +282,11 @@ class LiteRtFoodEstimationEngine(
         private const val DEFAULT_TOP_P = 0.95
         private const val DEFAULT_TEMPERATURE = 1.0
         private const val PROMPT = """
-            Output ONLY estimated calories for the food on the photo as a single number.
+            Estimate the food in this photo.
+            Output exactly two lines and no extra text.
+            description: one short line describing the food
+            calories: single integer estimated calories
             It is ok if this is just a guess.
-            ONLY NUMBER IN THE OUTPUT.
         """
     }
 }

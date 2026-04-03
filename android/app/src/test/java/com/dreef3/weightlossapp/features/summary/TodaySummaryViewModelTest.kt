@@ -114,6 +114,8 @@ private class SummaryFakeFoodEntryRepository : FoodEntryRepository {
 
     override fun observeEntriesInRange(startDate: LocalDate, endDate: LocalDate): Flow<List<FoodEntry>> = entries
 
+    override fun observeAllEntries(): Flow<List<FoodEntry>> = entries
+
     override suspend fun upsert(entry: FoodEntry): Long = entry.id
 }
 

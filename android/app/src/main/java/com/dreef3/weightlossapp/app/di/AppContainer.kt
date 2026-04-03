@@ -1,6 +1,8 @@
 package com.dreef3.weightlossapp.app.di
 
 import android.content.Context
+import com.dreef3.weightlossapp.chat.DietChatEngine
+import com.dreef3.weightlossapp.chat.LiteRtDietChatEngine
 import com.dreef3.weightlossapp.app.media.ModelDownloader
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.media.PhotoStorage
@@ -59,6 +61,9 @@ class AppContainer private constructor(context: Context) {
     val saveManualCaloriesUseCase = SaveManualCaloriesUseCase(foodEntryRepository)
 
     val foodEstimationEngine: FoodEstimationEngine = LiteRtFoodEstimationEngine(
+        modelFile = modelStorage.defaultModelFile,
+    )
+    val dietChatEngine: DietChatEngine = LiteRtDietChatEngine(
         modelFile = modelStorage.defaultModelFile,
     )
 

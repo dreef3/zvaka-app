@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,7 +34,10 @@ import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import com.dreef3.weightlossapp.domain.model.TrendWindow
 import com.dreef3.weightlossapp.domain.model.TrendWindowType
 import java.io.File
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun TrendsScreenRoute(
@@ -53,6 +57,13 @@ fun TrendsScreen(
     state: TrendsUiState,
     onSelectWindow: (TrendWindowType) -> Unit,
 ) {
+    val groupedEntries = remember(state.historyEntries) {
+        state.historyEntries.groupBy { it.entryDate }
+            .toSortedMap(compareByDescending { it })
+            .entries
+            .toList()
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -83,8 +94,17 @@ fun TrendsScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            items(state.historyEntries, key = { it.id }) { entry ->
-                HistoryEntryCard(entry = entry)
+            groupedEntries.forEach { (date, entries) ->
+                item(key = "header-$date") {
+                    Text(
+                        text = date.toSectionLabel(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                items(entries, key = { it.id }) { entry ->
+                    HistoryEntryCard(entry = entry)
+                }
             }
         } else {
             item {
@@ -95,6 +115,15 @@ fun TrendsScreen(
                 )
             }
         }
+    }
+}
+
+private fun LocalDate.toSectionLabel(): String {
+    val today = LocalDate.now()
+    return when (this) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> format(DateTimeFormatter.ofPattern("MMM d"))
     }
 }
 
@@ -164,8 +193,23 @@ private fun TrendMetricCard(
 private fun HistoryEntryCard(
     entry: FoodEntry,
 ) {
-    val bitmap = remember(entry.imagePath) {
-        entry.imagePath.takeIf { File(it).exists() }?.let(BitmapFactory::decodeFile)
+    val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = entry.imagePath) {
+        value = withContext(Dispatchers.IO) {
+            entry.imagePath.takeIf { File(it).exists() }?.let { path ->
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(path, bounds)
+                val sampleSize = calculateInSampleSize(
+                    srcWidth = bounds.outWidth,
+                    srcHeight = bounds.outHeight,
+                    reqWidth = 144,
+                    reqHeight = 144,
+                )
+                BitmapFactory.decodeFile(
+                    path,
+                    BitmapFactory.Options().apply { inSampleSize = sampleSize },
+                )
+            }
+        }
     }
     val formatter = remember { DateTimeFormatter.ofPattern("MMM d") }
     Card(
@@ -179,9 +223,10 @@ private fun HistoryEntryCard(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (bitmap != null) {
+            val loadedBitmap = bitmap
+            if (loadedBitmap != null) {
                 Image(
-                    bitmap = bitmap.asImageBitmap(),
+                    bitmap = loadedBitmap.asImageBitmap(),
                     contentDescription = "Meal photo",
                     modifier = Modifier.size(72.dp),
                     contentScale = ContentScale.Crop,
@@ -229,4 +274,23 @@ private fun HistoryEntryCard(
             }
         }
     }
+}
+
+private fun calculateInSampleSize(
+    srcWidth: Int,
+    srcHeight: Int,
+    reqWidth: Int,
+    reqHeight: Int,
+): Int {
+    var inSampleSize = 1
+    if (srcHeight > reqHeight || srcWidth > reqWidth) {
+        var halfHeight = srcHeight / 2
+        var halfWidth = srcWidth / 2
+        while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+            inSampleSize *= 2
+            halfHeight = srcHeight / 2
+            halfWidth = srcWidth / 2
+        }
+    }
+    return inSampleSize.coerceAtLeast(1)
 }

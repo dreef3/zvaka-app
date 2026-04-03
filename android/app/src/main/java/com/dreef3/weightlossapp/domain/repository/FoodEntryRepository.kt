@@ -7,5 +7,6 @@ import java.time.LocalDate
 interface FoodEntryRepository {
     fun observeEntriesFor(date: LocalDate): Flow<List<FoodEntry>>
     fun observeEntriesInRange(startDate: LocalDate, endDate: LocalDate): Flow<List<FoodEntry>>
+    fun observeAllEntries(): Flow<List<FoodEntry>>
     suspend fun upsert(entry: FoodEntry): Long
 }

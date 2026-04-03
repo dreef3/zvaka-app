@@ -3,6 +3,7 @@ package com.dreef3.weightlossapp.app
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoGraph
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.CircularProgressIndicator
@@ -22,6 +23,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.features.chat.CoachChatScreenRoute
 import com.dreef3.weightlossapp.features.capture.FoodCaptureScreenRoute
 import com.dreef3.weightlossapp.features.onboarding.OnboardingScreenRoute
 import com.dreef3.weightlossapp.features.onboarding.ProfileEditScreen
@@ -44,6 +46,11 @@ private val BottomDestinations = listOf(
         route = AppDestinations.Trends,
         label = "Trends",
         icon = { Icon(Icons.Outlined.AutoGraph, contentDescription = null) },
+    ),
+    BottomDestination(
+        route = AppDestinations.Chat,
+        label = "Coach",
+        icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null) },
     ),
     BottomDestination(
         route = AppDestinations.Profile,
@@ -124,6 +131,11 @@ fun AppNavHost(
             }
             composable(AppDestinations.Trends) {
                 TrendsScreenRoute(
+                    container = AppContainer.instance,
+                )
+            }
+            composable(AppDestinations.Chat) {
+                CoachChatScreenRoute(
                     container = AppContainer.instance,
                 )
             }

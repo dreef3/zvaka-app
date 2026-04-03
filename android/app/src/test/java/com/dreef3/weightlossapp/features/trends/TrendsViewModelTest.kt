@@ -108,6 +108,8 @@ private class TrendsFakeFoodEntryRepository(
 
     override fun observeEntriesInRange(startDate: LocalDate, endDate: LocalDate): Flow<List<FoodEntry>> = flow
 
+    override fun observeAllEntries(): Flow<List<FoodEntry>> = flow
+
     override suspend fun upsert(entry: FoodEntry): Long = entry.id
 }
 

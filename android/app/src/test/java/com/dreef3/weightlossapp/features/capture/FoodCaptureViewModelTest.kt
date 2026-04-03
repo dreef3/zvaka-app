@@ -158,6 +158,8 @@ private class FakeFoodEntryRepository : FoodEntryRepository {
 
     override fun observeEntriesInRange(startDate: LocalDate, endDate: LocalDate): Flow<List<FoodEntry>> = emptyFlow()
 
+    override fun observeAllEntries(): Flow<List<FoodEntry>> = MutableStateFlow(savedEntries.toList())
+
     override suspend fun upsert(entry: FoodEntry): Long {
         val id = if (entry.id == 0L) (savedEntries.size + 1).toLong() else entry.id
         savedEntries.removeAll { it.id == id }
