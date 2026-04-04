@@ -1,5 +1,6 @@
 package com.dreef3.weightlossapp.features.chat
 
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -10,8 +11,13 @@ import com.dreef3.weightlossapp.chat.ChatRole
 import com.dreef3.weightlossapp.chat.DietChatMessage
 import com.dreef3.weightlossapp.chat.DietChatSnapshot
 import com.dreef3.weightlossapp.chat.DietEntryContext
+import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
+import com.dreef3.weightlossapp.domain.model.FoodEntry
+import com.dreef3.weightlossapp.domain.model.FoodEntrySource
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
+import com.dreef3.weightlossapp.inference.FoodEstimationException
+import com.dreef3.weightlossapp.inference.FoodEstimationRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +28,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Instant
 
 private data class ParsedCorrection(
     val lookupQuery: String?,
@@ -36,6 +43,7 @@ data class CoachChatUiState(
     val isSending: Boolean = false,
     val showOverviewSuggestion: Boolean = true,
     val readOnly: Boolean = false,
+    val attachedImagePath: String? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -125,6 +133,28 @@ class CoachChatViewModel(
         _uiState.value = _uiState.value.copy(input = value)
     }
 
+    fun attachImage(uriString: String) {
+        if (readOnly || _uiState.value.isSending) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val sourceUri = Uri.parse(uriString)
+                val targetFile = container.photoStorage.createPhotoFile()
+                container.appContext.contentResolver.openInputStream(sourceUri).use { input ->
+                    requireNotNull(input) { "Unable to open selected image." }
+                    targetFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                _uiState.value = _uiState.value.copy(attachedImagePath = targetFile.absolutePath)
+            }.onFailure { throwable ->
+                Log.e(TAG, "attachImage failed", throwable)
+            }
+        }
+    }
+
+    fun clearAttachment() {
+        if (readOnly) return
+        _uiState.value = _uiState.value.copy(attachedImagePath = null)
+    }
+
     fun insertCorrectionExample() {
         if (readOnly) return
         debugLog("insertCorrectionExample")
@@ -136,7 +166,12 @@ class CoachChatViewModel(
     fun send() {
         if (readOnly) return
         val text = _uiState.value.input.trim()
-        if (text.isBlank() || _uiState.value.isSending) return
+        val attachedImagePath = _uiState.value.attachedImagePath
+        if ((text.isBlank() && attachedImagePath == null) || _uiState.value.isSending) return
+        if (attachedImagePath != null) {
+            sendAttachedPhoto(text, attachedImagePath)
+            return
+        }
         val directCorrection = parseCorrection(text)
         if (directCorrection != null) {
             debugLog(
@@ -173,6 +208,87 @@ class CoachChatViewModel(
         )
     }
 
+    private fun sendAttachedPhoto(
+        text: String,
+        imagePath: String,
+    ) {
+        _uiState.value = _uiState.value.copy(
+            input = "",
+            attachedImagePath = null,
+            isSending = true,
+            showOverviewSuggestion = false,
+        )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val sessionId = ensureWritableSessionId()
+            val userVisibleText = text.ifBlank { "Attached a food photo for calorie estimate." }
+            container.coachChatRepository.appendMessage(
+                sessionId = sessionId,
+                role = ChatRole.User,
+                text = userVisibleText,
+                createdAtEpochMs = System.currentTimeMillis(),
+                imagePath = imagePath,
+            )
+            val capturedAt = Instant.now()
+            val estimation = container.foodEstimationEngine.estimate(
+                FoodEstimationRequest(
+                    imagePath = imagePath,
+                    capturedAtEpochMs = capturedAt.toEpochMilli(),
+                    userContext = text.takeIf { it.isNotBlank() },
+                    preferredDescription = text.takeIf { it.isNotBlank() },
+                ),
+            )
+            val reply = estimation.fold(
+                onSuccess = { result ->
+                    if (result.confidenceState == ConfidenceState.High) {
+                        val description = text.takeIf { it.isNotBlank() }
+                            ?: result.detectedFoodLabel
+                            ?: "Meal photo"
+                        container.updateFoodEntryUseCase(
+                            FoodEntry(
+                                capturedAt = capturedAt,
+                                entryDate = container.localDateProvider.dateFor(capturedAt),
+                                imagePath = imagePath,
+                                estimatedCalories = result.estimatedCalories,
+                                finalCalories = result.estimatedCalories,
+                                confidenceState = result.confidenceState,
+                                detectedFoodLabel = description,
+                                confidenceNotes = result.confidenceNotes,
+                                confirmationStatus = ConfirmationStatus.NotRequired,
+                                source = FoodEntrySource.AiEstimate,
+                                entryStatus = FoodEntryStatus.Ready,
+                                debugInteractionLog = result.debugInteractionLog,
+                            ),
+                        )
+                        "Logged $description at ${result.estimatedCalories} kcal."
+                    } else {
+                        saveManualPhotoEntry(capturedAt, imagePath, text, result.debugInteractionLog)
+                    }
+                },
+                onFailure = { throwable ->
+                    saveManualPhotoEntry(
+                        capturedAt = capturedAt,
+                        imagePath = imagePath,
+                        userText = text,
+                        debugTrace = (throwable as? FoodEstimationException)?.debugInteractionLog,
+                    )
+                },
+            )
+            container.coachChatRepository.appendMessage(
+                sessionId = sessionId,
+                role = ChatRole.Assistant,
+                text = reply,
+                createdAtEpochMs = System.currentTimeMillis(),
+                imagePath = null,
+            )
+            container.coachChatRepository.updateSessionSummary(sessionId, summarizeConversation(reply, userVisibleText))
+            _uiState.value = _uiState.value.copy(
+                isSending = false,
+                showOverviewSuggestion = false,
+            )
+        }
+    }
+
     private fun sendMessage(
         userVisibleText: String,
         actualPrompt: String,
@@ -187,7 +303,13 @@ class CoachChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val sessionId = ensureWritableSessionId()
             val userMessageTime = System.currentTimeMillis()
-            container.coachChatRepository.appendMessage(sessionId, ChatRole.User, userVisibleText, userMessageTime)
+            container.coachChatRepository.appendMessage(
+                sessionId = sessionId,
+                role = ChatRole.User,
+                text = userVisibleText,
+                createdAtEpochMs = userMessageTime,
+                imagePath = null,
+            )
             val history = container.coachChatRepository.getMessages(sessionId)
             val response = container.dietChatEngine.sendMessage(
                 message = actualPrompt,
@@ -198,7 +320,13 @@ class CoachChatViewModel(
                 "I couldn't answer that yet. Try again in a moment."
             }
             val assistantTime = System.currentTimeMillis()
-            container.coachChatRepository.appendMessage(sessionId, ChatRole.Assistant, response, assistantTime)
+            container.coachChatRepository.appendMessage(
+                sessionId = sessionId,
+                role = ChatRole.Assistant,
+                text = response,
+                createdAtEpochMs = assistantTime,
+                imagePath = null,
+            )
             container.coachChatRepository.updateSessionSummary(sessionId, summarizeConversation(response, history.lastOrNull()?.text))
             debugLog("assistant response chars=${response.length}")
             _uiState.value = _uiState.value.copy(
@@ -225,6 +353,7 @@ class CoachChatViewModel(
                 role = ChatRole.User,
                 text = userText,
                 createdAtEpochMs = System.currentTimeMillis(),
+                imagePath = null,
             )
             val snapshot = snapshotState.value
             val candidates = resolveCorrectionCandidates(snapshot, correction.lookupQuery)
@@ -261,6 +390,7 @@ class CoachChatViewModel(
                 role = ChatRole.Assistant,
                 text = reply,
                 createdAtEpochMs = System.currentTimeMillis(),
+                imagePath = null,
             )
             container.coachChatRepository.updateSessionSummary(sessionId, summarizeConversation(reply, userText))
             _uiState.value = _uiState.value.copy(
@@ -339,6 +469,7 @@ class CoachChatViewModel(
         return null
     }
 
+
     private fun cleanDescription(raw: String): String? {
         val stripped = raw
             .replace(Regex("""(?i),?\s*(around|about)\s*\d{2,5}\s*k?cal.*$"""), "")
@@ -382,6 +513,31 @@ class CoachChatViewModel(
 
     companion object {
         private const val TAG = "CoachChat"
+    }
+
+    private suspend fun saveManualPhotoEntry(
+        capturedAt: Instant,
+        imagePath: String,
+        userText: String,
+        debugTrace: String?,
+    ): String {
+        container.updateFoodEntryUseCase(
+            FoodEntry(
+                capturedAt = capturedAt,
+                entryDate = container.localDateProvider.dateFor(capturedAt),
+                imagePath = imagePath,
+                estimatedCalories = 0,
+                finalCalories = 0,
+                confidenceState = ConfidenceState.Failed,
+                detectedFoodLabel = userText.takeIf { it.isNotBlank() },
+                confidenceNotes = "Could not estimate calories automatically. Enter them manually.",
+                confirmationStatus = ConfirmationStatus.NotRequired,
+                source = FoodEntrySource.AiEstimate,
+                entryStatus = FoodEntryStatus.NeedsManual,
+                debugInteractionLog = debugTrace,
+            ),
+        )
+        return "I saved the photo, but automatic estimation wasn't reliable enough. Open Today and enter calories manually."
     }
 }
 

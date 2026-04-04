@@ -23,4 +23,5 @@ data class CoachChatMessageEntity(
     val role: String,
     val text: String,
     val createdAtEpochMs: Long,
+    val imagePath: String?,
 )

@@ -13,6 +13,12 @@ interface CoachChatRepository {
     suspend fun getSession(sessionId: Long): CoachChatSession?
     suspend fun getMessages(sessionId: Long): List<DietChatMessage>
     suspend fun ensureSessionForDate(date: LocalDate): Long
-    suspend fun appendMessage(sessionId: Long, role: ChatRole, text: String, createdAtEpochMs: Long): Long
+    suspend fun appendMessage(
+        sessionId: Long,
+        role: ChatRole,
+        text: String,
+        createdAtEpochMs: Long,
+        imagePath: String? = null,
+    ): Long
     suspend fun updateSessionSummary(sessionId: Long, summary: String)
 }

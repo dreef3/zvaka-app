@@ -5,6 +5,7 @@ data class DietChatMessage(
     val role: ChatRole,
     val text: String,
     val createdAtEpochMs: Long = 0,
+    val imagePath: String? = null,
 )
 
 enum class ChatRole {

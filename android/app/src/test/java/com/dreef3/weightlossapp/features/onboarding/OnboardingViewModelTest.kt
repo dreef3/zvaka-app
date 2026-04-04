@@ -89,7 +89,7 @@ class OnboardingViewModelTest {
         advanceUntilIdle()
         assertEquals(OnboardingStep.Downloading, viewModel.uiState.value.step)
 
-        storage.fileFor(ModelDescriptors.smolVlm).writeText("model")
+        storage.fileFor(ModelDescriptors.gemma).writeText("model")
         modelController.state.value = ModelDownloadState(isDownloading = false, progressPercent = 100)
         advanceUntilIdle()
 

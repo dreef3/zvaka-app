@@ -48,14 +48,19 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.chat.CoachChatSession
 import com.dreef3.weightlossapp.domain.model.FoodEntry
 import java.io.File
 import android.graphics.BitmapFactory
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun TodaySummaryScreenRoute(
     container: AppContainer,
     onNavigateToTrends: () -> Unit,
+    onOpenHistoricalChat: (Long) -> Unit,
+    onOpenMealDebug: (Long) -> Unit,
 ) {
     val viewModel: TodaySummaryViewModel = viewModel(factory = TodaySummaryViewModelFactory(container))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -100,6 +105,8 @@ fun TodaySummaryScreenRoute(
             }
         },
         onOpenTrends = onNavigateToTrends,
+        onOpenHistoricalChat = onOpenHistoricalChat,
+        onOpenMealDebug = onOpenMealDebug,
         onOpenManualEntry = { manualEntryTarget = it },
         onRetryEntry = viewModel::retryEntry,
     )
@@ -121,9 +128,17 @@ fun TodaySummaryScreen(
     state: TodaySummaryUiState,
     onTakePhoto: () -> Unit,
     onOpenTrends: () -> Unit,
+    onOpenHistoricalChat: (Long) -> Unit,
+    onOpenMealDebug: (Long) -> Unit,
     onOpenManualEntry: (FoodEntry) -> Unit,
     onRetryEntry: (FoodEntry) -> Unit,
 ) {
+    val groupedHistory = remember(state.historyItems) {
+        state.historyItems.groupBy { it.date }
+            .toSortedMap(compareByDescending { it })
+            .entries
+            .toList()
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -174,6 +189,38 @@ fun TodaySummaryScreen(
                         )
                     }
                 }
+                if (state.historyItems.isNotEmpty()) {
+                    groupedHistory.forEach { (date, itemsForDate) ->
+                        item(key = "today-history-$date") {
+                            Text(
+                                text = date.toSectionLabel(),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        items(
+                            itemsForDate,
+                            key = {
+                                when (it) {
+                                    is TodayHistoryItem.Meal -> "today-meal-${it.entry.id}"
+                                    is TodayHistoryItem.CoachSession -> "today-chat-${it.session.id}"
+                                }
+                            },
+                        ) { historyItem ->
+                            when (historyItem) {
+                                is TodayHistoryItem.Meal -> HistoryEntryCard(
+                                    entry = historyItem.entry,
+                                    onClick = { onOpenMealDebug(historyItem.entry.id) },
+                                    onRetryEntry = { onRetryEntry(historyItem.entry) },
+                                )
+                                is TodayHistoryItem.CoachSession -> CoachHistoryCard(
+                                    session = historyItem.session,
+                                    onClick = { onOpenHistoricalChat(historyItem.session.id) },
+                                )
+                            }
+                        }
+                    }
+                }
                 if (state.isEmpty && state.processingCount == 0 && state.manualEntries.isEmpty()) {
                     item {
                         SummaryEmptyState()
@@ -194,6 +241,156 @@ fun TodaySummaryScreen(
             },
             text = { Text("Take food photo") },
         )
+    }
+}
+
+private fun LocalDate.toSectionLabel(): String {
+    val today = LocalDate.now()
+    return when (this) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> format(DateTimeFormatter.ofPattern("MMM d"))
+    }
+}
+
+@Composable
+private fun CoachHistoryCard(
+    session: CoachChatSession,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Card(
+                modifier = Modifier.size(72.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "Coach",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSecondary,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "Coach conversation",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    text = session.summary ?: "Open to read this conversation.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryEntryCard(
+    entry: FoodEntry,
+    onClick: () -> Unit,
+    onRetryEntry: () -> Unit,
+) {
+    val bitmap = remember(entry.imagePath) {
+        entry.imagePath.takeIf { it.isNotBlank() && File(it).exists() }?.let(BitmapFactory::decodeFile)
+    }
+    val formatter = remember { DateTimeFormatter.ofPattern("MMM d") }
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "Meal photo",
+                    modifier = Modifier.size(72.dp),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Card(
+                    modifier = Modifier.size(72.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = entry.detectedFoodLabel?.take(1)?.uppercase() ?: "M",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = entry.detectedFoodLabel ?: "Meal",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (entry.entryStatus == com.dreef3.weightlossapp.domain.model.FoodEntryStatus.NeedsManual) {
+                        IconButton(
+                            onClick = onRetryEntry,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Retry estimation",
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = formatter.format(entry.entryDate),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (entry.entryStatus == com.dreef3.weightlossapp.domain.model.FoodEntryStatus.NeedsManual) {
+                    Text(
+                        text = "Needs manual calories",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+            Text(
+                text = "${entry.finalCalories}",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
     }
 }
 

@@ -7,14 +7,12 @@ import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.media.ModelDownloadState
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
-import com.dreef3.weightlossapp.data.preferences.AppPreferences
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntry
 import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import com.dreef3.weightlossapp.domain.usecase.ConfirmFoodEstimateUseCase
 import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
-import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import com.dreef3.weightlossapp.inference.FoodEstimationEngine
 import com.dreef3.weightlossapp.inference.FoodEstimationRequest
 import com.dreef3.weightlossapp.inference.FoodEstimationResult
@@ -57,8 +55,6 @@ class FoodCaptureViewModelTest {
     @Test
     fun highConfidenceEstimateSavesImmediately() = runTest(dispatcher) {
         val repository = FakeFoodEntryRepository()
-        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
-        preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
         val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
                 FoodEstimationResult(
@@ -70,7 +66,6 @@ class FoodCaptureViewModelTest {
             ),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
-            preferences = preferences,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
@@ -88,8 +83,6 @@ class FoodCaptureViewModelTest {
     @Test
     fun nonHighConfidenceRequiresConfirmationAndRejectRequestsRetake() = runTest(dispatcher) {
         val repository = FakeFoodEntryRepository()
-        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
-        preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
         val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
                 FoodEstimationResult(
@@ -101,7 +94,6 @@ class FoodCaptureViewModelTest {
             ),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
-            preferences = preferences,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
@@ -122,8 +114,6 @@ class FoodCaptureViewModelTest {
     @Test
     fun initRequestsSelectedModelDownloadWhenMissing() = runTest(dispatcher) {
         val modelStorage = realModelStorage(available = false)
-        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
-        preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
         val downloadRepository = FakeModelDownloadRepository()
         FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
@@ -136,7 +126,6 @@ class FoodCaptureViewModelTest {
             ),
             modelStorage = modelStorage,
             modelDownloadRepository = downloadRepository,
-            preferences = preferences,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
@@ -145,13 +134,11 @@ class FoodCaptureViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, downloadRepository.enqueueCalls)
-        assertEquals(ModelDescriptors.smolVlm, downloadRepository.lastRequestedModel)
+        assertEquals(ModelDescriptors.gemma, downloadRepository.lastRequestedModel)
     }
 
     @Test
     fun downloadModelDelegatesToSelectedModelController() = runTest(dispatcher) {
-        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
-        preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
         val downloadRepository = FakeModelDownloadRepository()
         val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
@@ -164,7 +151,6 @@ class FoodCaptureViewModelTest {
             ),
             modelStorage = realModelStorage(available = false),
             modelDownloadRepository = downloadRepository,
-            preferences = preferences,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
@@ -176,7 +162,7 @@ class FoodCaptureViewModelTest {
         advanceUntilIdle()
 
         assertEquals(initialEnqueueCalls + 1, downloadRepository.enqueueCalls)
-        assertEquals(ModelDescriptors.smolVlm, downloadRepository.lastRequestedModel)
+        assertEquals(ModelDescriptors.gemma, downloadRepository.lastRequestedModel)
     }
 
     private fun realModelStorage(available: Boolean): ModelStorage {
@@ -184,9 +170,9 @@ class FoodCaptureViewModelTest {
         val storage = ModelStorage(modelDirectoryOverride = tempDir)
         storage.modelDirectory.mkdirs()
         if (available) {
-            storage.fileFor(ModelDescriptors.smolVlm).writeText("model")
+            storage.fileFor(ModelDescriptors.gemma).writeText("model")
         } else {
-            storage.fileFor(ModelDescriptors.smolVlm).delete()
+            storage.fileFor(ModelDescriptors.gemma).delete()
         }
         return storage
     }

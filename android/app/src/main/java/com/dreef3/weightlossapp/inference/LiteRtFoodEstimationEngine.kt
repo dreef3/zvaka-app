@@ -59,17 +59,23 @@ class LiteRtFoodEstimationEngine(
                                 },
                             ),
                         )
-                        debugLog("estimate prompt chars=${PROMPT.trimIndent().length} tools=${toolProviders.size}")
+                        val prompt = buildPrompt(request)
+                        debugLog("estimate prompt chars=${prompt.length} tools=${toolProviders.size}")
                         val response = activeEngine.createToolConversation(toolProviders).use { conversation ->
-                            conversation.awaitResponse(bitmap = bitmap)
+                            conversation.awaitResponse(bitmap = bitmap, prompt = prompt)
                         }
                         debugLog("estimate raw final=${response.responseText.take(400)}")
                         submittedEstimate?.let {
                             debugLog("tool result description=${it.description} calories=${it.calories}")
                         }
-                        submittedEstimate?.toResult(response.debugTrace) ?: FoodEstimationTextParser
-                            .parse(response.responseText)
-                            .copy(debugInteractionLog = response.debugTrace)
+                        submittedEstimate?.toResult(response.debugTrace, request.preferredDescription) ?: run {
+                            val parsed = FoodEstimationTextParser.parse(response.responseText)
+                            parsed.copy(
+                                detectedFoodLabel = request.preferredDescription?.trim()?.ifBlank { null }
+                                    ?: parsed.detectedFoodLabel,
+                                debugInteractionLog = response.debugTrace,
+                            )
+                        }
                     } catch (exception: CancellationException) {
                         throw exception
                     } catch (exception: FoodEstimationException) {
@@ -188,19 +194,19 @@ class LiteRtFoodEstimationEngine(
         Log.i(TAG, "stage=$stage parentChildren=$children")
     }
 
-    private suspend fun Conversation.awaitResponse(bitmap: Bitmap): ConversationTrace =
+    private suspend fun Conversation.awaitResponse(bitmap: Bitmap, prompt: String): ConversationTrace =
         suspendCancellableCoroutine { continuation ->
             val builder = StringBuilder()
             val trace = StringBuilder()
             var lastChannel: String? = null
             trace.appendLine("Prompt:")
-            trace.appendLine(PROMPT.trimIndent())
+            trace.appendLine(prompt.trimEnd())
             trace.appendLine()
             sendMessageAsync(
                 Contents.of(
                     listOf(
                         Content.ImageBytes(bitmap.toPngByteArray()),
-                        Content.Text(PROMPT),
+                        Content.Text(prompt),
                     ),
                 ),
                 object : MessageCallback {
@@ -269,21 +275,40 @@ class LiteRtFoodEstimationEngine(
         return stream.toByteArray()
     }
 
-    private fun ToolFoodEstimate.toResult(rawTrace: String): FoodEstimationResult =
-        FoodEstimationResult(
+    private fun ToolFoodEstimate.toResult(
+        rawTrace: String,
+        preferredDescription: String?,
+    ): FoodEstimationResult {
+        val finalDescription = preferredDescription?.trim()?.ifBlank { null } ?: description.ifBlank { null }
+        return FoodEstimationResult(
             estimatedCalories = calories,
             confidenceState = ConfidenceState.High,
-            detectedFoodLabel = description.ifBlank { null },
+            detectedFoodLabel = finalDescription,
             confidenceNotes = null,
-            detectedItems = description.ifBlank { null }?.let(::listOf) ?: emptyList(),
+            detectedItems = finalDescription?.let(::listOf) ?: emptyList(),
             debugInteractionLog = buildString {
                 appendLine(rawTrace.trimEnd())
                 appendLine()
                 appendLine("[tool]")
-                appendLine("Description: $description")
+                appendLine("Description: ${finalDescription ?: description}")
                 appendLine("Calories: $calories")
             },
         )
+    }
+
+    private fun buildPrompt(request: FoodEstimationRequest): String = buildString {
+        appendLine("Look carefully at this food photo and estimate calories.")
+        request.userContext?.trim()?.takeIf { it.isNotBlank() }?.let { context ->
+            appendLine("Additional user context about the food: $context")
+        }
+        request.preferredDescription?.trim()?.takeIf { it.isNotBlank() }?.let { description ->
+            appendLine("Use this exact food description in your final estimate: $description")
+        }
+        appendLine("Think about the ingredients and portion size before answering, but do not show that reasoning.")
+        appendLine("Output exactly two lines and no extra text.")
+        appendLine("First line must start with Description:")
+        append("Second line must start with Calories:")
+    }
 
     companion object {
         private const val TAG = "LiteRtFoodEngine"
@@ -291,13 +316,6 @@ class LiteRtFoodEstimationEngine(
         private const val DEFAULT_TOP_K = 64
         private const val DEFAULT_TOP_P = 0.95
         private const val DEFAULT_TEMPERATURE = 1.0
-        private const val PROMPT = """
-            Look carefully at this food photo and estimate calories.
-            Think about the ingredients and portion size before answering, but do not show that reasoning.
-            Output exactly two lines and no extra text.
-            First line must start with Description:
-            Second line must start with Calories:
-        """
     }
 
     private fun debugLog(message: String) {

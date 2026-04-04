@@ -119,4 +119,5 @@ internal fun CoachChatMessageEntity.toDomain(): DietChatMessage = DietChatMessag
     role = ChatRole.valueOf(role),
     text = text,
     createdAtEpochMs = createdAtEpochMs,
+    imagePath = imagePath,
 )

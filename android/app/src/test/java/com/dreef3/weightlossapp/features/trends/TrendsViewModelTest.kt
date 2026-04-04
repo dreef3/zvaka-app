@@ -18,6 +18,8 @@ import com.dreef3.weightlossapp.domain.model.TrendWindowType
 import com.dreef3.weightlossapp.domain.model.UserProfile
 import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import com.dreef3.weightlossapp.domain.repository.ProfileRepository
+import com.dreef3.weightlossapp.domain.usecase.BackgroundPhotoCaptureUseCase
+import com.dreef3.weightlossapp.domain.usecase.PhotoProcessingScheduler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,6 +76,11 @@ class TrendsViewModelTest {
             foodEntryRepository = TrendsFakeFoodEntryRepository(entries),
             coachChatRepository = TrendsFakeCoachChatRepository(),
             trendAggregator = TrendAggregator(),
+            backgroundPhotoCaptureUseCase = BackgroundPhotoCaptureUseCase(
+                repository = TrendsFakeFoodEntryRepository(entries),
+                scheduler = NoopTrendPhotoScheduler(),
+                localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
+            ),
         )
 
         advanceUntilIdle()
@@ -112,7 +119,13 @@ private class TrendsFakeCoachChatRepository : CoachChatRepository {
     override suspend fun getSession(sessionId: Long): CoachChatSession? = null
     override suspend fun getMessages(sessionId: Long): List<DietChatMessage> = emptyList()
     override suspend fun ensureSessionForDate(date: LocalDate): Long = 1L
-    override suspend fun appendMessage(sessionId: Long, role: ChatRole, text: String, createdAtEpochMs: Long): Long = 1L
+    override suspend fun appendMessage(
+        sessionId: Long,
+        role: ChatRole,
+        text: String,
+        createdAtEpochMs: Long,
+        imagePath: String?,
+    ): Long = 1L
     override suspend fun updateSessionSummary(sessionId: Long, summary: String) = Unit
 }
 
@@ -161,4 +174,8 @@ private class TrendsFakeProfileRepository(
 
     override suspend fun findBudgetFor(date: LocalDate): DailyCalorieBudgetPeriod? =
         flow.value.filter { it.effectiveFromDate <= date }.maxByOrNull { it.effectiveFromDate }
+}
+
+private class NoopTrendPhotoScheduler : PhotoProcessingScheduler {
+    override fun enqueue(entryId: Long, imagePath: String, capturedAtEpochMs: Long) = Unit
 }

@@ -47,6 +47,13 @@ data class TrendsUiState(
     val window: TrendWindow? = null,
     val historyEntries: List<FoodEntry> = emptyList(),
     val historyItems: List<TrendsHistoryItem> = emptyList(),
+    val dailyStats: List<TrendDayStat> = emptyList(),
+)
+
+data class TrendDayStat(
+    val date: LocalDate,
+    val consumedCalories: Int,
+    val budgetCalories: Int,
 )
 
 class TrendsViewModel(
@@ -97,6 +104,15 @@ class TrendsViewModel(
                 val date = LocalDate.parse(session.sessionDateIso)
                 date >= windowStart && date <= today
             }
+        val dailyStats = generateSequence(windowStart) { current ->
+            if (current >= today) null else current.plusDays(1)
+        }.map { date ->
+            TrendDayStat(
+                date = date,
+                consumedCalories = consumedByDate[date] ?: 0,
+                budgetCalories = budgetsByDate[date] ?: 0,
+            )
+        }.toList()
         TrendsUiState(
             selectedWindow = windowType,
             window = trendAggregator.buildTrendWindow(
@@ -117,6 +133,7 @@ class TrendsViewModel(
                     }
                 },
             ),
+            dailyStats = dailyStats,
         )
     }.stateIn(
         scope = viewModelScope,

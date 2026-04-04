@@ -4,6 +4,8 @@ data class FoodEstimationRequest(
     val imagePath: String,
     val capturedAtEpochMs: Long,
     val locale: String? = null,
+    val userContext: String? = null,
+    val preferredDescription: String? = null,
 )
 
 interface FoodEstimationEngine {

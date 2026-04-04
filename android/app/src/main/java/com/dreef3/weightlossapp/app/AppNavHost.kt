@@ -126,6 +126,12 @@ fun AppNavHost(
                 TodaySummaryScreenRoute(
                     container = AppContainer.instance,
                     onNavigateToTrends = { navigateToTopLevel(AppDestinations.Trends) },
+                    onOpenHistoricalChat = { sessionId ->
+                        navController.navigate(AppDestinations.historicalChat(sessionId))
+                    },
+                    onOpenMealDebug = { entryId ->
+                        navController.navigate(AppDestinations.mealDebug(entryId))
+                    },
                 )
             }
             composable(AppDestinations.Capture) {

@@ -44,13 +44,20 @@ class CoachChatRepositoryImpl(
         )
     }
 
-    override suspend fun appendMessage(sessionId: Long, role: ChatRole, text: String, createdAtEpochMs: Long): Long {
+    override suspend fun appendMessage(
+        sessionId: Long,
+        role: ChatRole,
+        text: String,
+        createdAtEpochMs: Long,
+        imagePath: String?,
+    ): Long {
         val id = messageDao.insert(
             CoachChatMessageEntity(
                 sessionId = sessionId,
                 role = role.name,
                 text = text,
                 createdAtEpochMs = createdAtEpochMs,
+                imagePath = imagePath,
             ),
         )
         sessionDao.getById(sessionId)?.let { existing ->

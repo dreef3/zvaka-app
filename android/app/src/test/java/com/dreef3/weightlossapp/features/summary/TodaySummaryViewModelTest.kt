@@ -1,6 +1,9 @@
 package com.dreef3.weightlossapp.features.summary
 
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
+import com.dreef3.weightlossapp.chat.ChatRole
+import com.dreef3.weightlossapp.chat.CoachChatSession
+import com.dreef3.weightlossapp.chat.DietChatMessage
 import com.dreef3.weightlossapp.domain.calculation.SummaryAggregator
 import com.dreef3.weightlossapp.domain.model.ActivityLevel
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
@@ -11,6 +14,7 @@ import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntrySource
 import com.dreef3.weightlossapp.domain.model.Sex
 import com.dreef3.weightlossapp.domain.model.UserProfile
+import com.dreef3.weightlossapp.domain.repository.CoachChatRepository
 import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import com.dreef3.weightlossapp.domain.repository.ProfileRepository
 import com.dreef3.weightlossapp.domain.usecase.BackgroundPhotoCaptureUseCase
@@ -50,7 +54,7 @@ class TodaySummaryViewModelTest {
 
     @Test
     fun publishesLiveSummaryWhenEntriesChange() = runTest(dispatcher) {
-        val date = LocalDate.parse("2026-04-03")
+        val date = LocalDate.now(ZoneId.of("UTC"))
         val profileRepository = SummaryFakeProfileRepository(
             budgetPeriods = listOf(
                 DailyCalorieBudgetPeriod(
@@ -68,6 +72,7 @@ class TodaySummaryViewModelTest {
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             profileRepository = profileRepository,
             foodEntryRepository = foodRepository,
+            coachChatRepository = EmptyCoachChatRepository(),
             summaryAggregator = SummaryAggregator(),
             backgroundPhotoCaptureUseCase = BackgroundPhotoCaptureUseCase(
                 repository = foodRepository,
@@ -150,4 +155,29 @@ private class SummaryFakeProfileRepository(
 
     override suspend fun findBudgetFor(date: LocalDate): DailyCalorieBudgetPeriod? =
         periods.value.filter { it.effectiveFromDate <= date }.maxByOrNull { it.effectiveFromDate }
+}
+
+private class EmptyCoachChatRepository : CoachChatRepository {
+    override fun observeSessionForDate(date: LocalDate): Flow<CoachChatSession?> = MutableStateFlow(null)
+
+    override fun observeMessages(sessionId: Long): Flow<List<DietChatMessage>> = MutableStateFlow(emptyList())
+
+    override fun observeSessionsInRange(startDate: LocalDate, endDate: LocalDate): Flow<List<CoachChatSession>> =
+        MutableStateFlow(emptyList())
+
+    override suspend fun getSession(sessionId: Long): CoachChatSession? = null
+
+    override suspend fun getMessages(sessionId: Long): List<DietChatMessage> = emptyList()
+
+    override suspend fun ensureSessionForDate(date: LocalDate): Long = 1L
+
+    override suspend fun appendMessage(
+        sessionId: Long,
+        role: ChatRole,
+        text: String,
+        createdAtEpochMs: Long,
+        imagePath: String?,
+    ): Long = 1L
+
+    override suspend fun updateSessionSummary(sessionId: Long, summary: String) = Unit
 }

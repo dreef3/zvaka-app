@@ -113,6 +113,24 @@ class LiteRtDietChatEngine(
                                 information to save it, call logFoodEntry instead of only replying
                                 in text. If calories are missing or ambiguous, ask a short follow-up
                                 question instead of guessing.
+                                The meal name in the user's own message is already a complete
+                                value for logFoodEntry.mealName. Do not ask for a separate,
+                                clearer, or more specific description when the user already named
+                                the meal, for example 'Mac Menu', 'potato burek', or
+                                'yogurt with berries'.
+                                If the user gives both a meal name and calories, call
+                                logFoodEntry immediately.
+                                If the user asks you to estimate calories for a named meal in text,
+                                estimate them first, then call logFoodEntry with that same
+                                user-provided meal name. Do not ask for another description.
+                                If you need to save the meal, prefer tools over plain text.
+                                Examples:
+                                User: "I had Mac Menu, 950 kcal."
+                                Assistant action: call logFoodEntry(mealName="Mac Menu", calories=950, ...)
+                                User: "I ate potato burek, estimate calories for me."
+                                Assistant action: estimate calories, then call logFoodEntry(mealName="potato burek", ...)
+                                User: "Log yogurt with berries for yesterday, 220 kcal."
+                                Assistant action: call logFoodEntry(mealName="yogurt with berries", dateIso="<yesterday>", calories=220, ...)
                                 Base concrete claims about the user's diet on the trusted context and
                                 tool results, not guesses.
                                 Always be specific about today's meals first, then give 1-3 useful

@@ -1,5 +1,7 @@
 package com.dreef3.weightlossapp.chat
 
+import android.util.Log
+import com.dreef3.weightlossapp.BuildConfig
 import com.google.ai.edge.litertlm.Tool
 import com.google.ai.edge.litertlm.ToolParam
 import com.google.ai.edge.litertlm.ToolSet
@@ -86,21 +88,28 @@ class DietEntryTools(
     }
 
     @Tool(
-        description = "Log a new food entry without a photo when the user explicitly says what they ate and provides calories. Use today's date unless the user clearly specifies another ISO date.",
+        description = "Log a new food entry without a photo when the user says what they ate and provides calories. Never ask for another description if the user already named the meal. Names like 'Mac Menu', 'potato burek', or 'yogurt with berries' are already complete meal names. Use today's date unless the user clearly specifies another ISO date.",
     )
     fun logFoodEntry(
-        @ToolParam(description = "Short food description to save.") description: String,
+        @ToolParam(description = "Exact meal name from the user's message. Copy it directly even if it is short or informal. Examples: 'Mac Menu', 'potato burek', 'yogurt with berries'.") mealName: String,
         @ToolParam(description = "Whole-number calories for the entry.") calories: Int,
         @ToolParam(description = "Entry date in ISO format yyyy-MM-dd. Use empty string for today.") dateIso: String,
-        @ToolParam(description = "Short note explaining that this was added from chat.") reason: String,
+        @ToolParam(description = "Short note explaining that this was added from chat. Do not ask the user for this.") reason: String,
     ): Map<String, Any?> = runBlocking {
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "logFoodEntry mealName=$mealName calories=$calories dateIso=$dateIso")
+        }
         correctionService.logEntry(
             DietEntryLogRequest(
-                description = description,
+                description = mealName,
                 calories = calories,
                 dateIso = dateIso.takeIf { it.isNotBlank() },
                 reason = reason,
             ),
         )
+    }
+
+    companion object {
+        private const val TAG = "DietEntryTools"
     }
 }

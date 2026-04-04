@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,7 +50,10 @@ fun ProfileEditScreen(
     var errors by remember { mutableStateOf(emptyList<String>()) }
     var isSaving by remember { mutableStateOf(false) }
     var isResetting by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
+    var resetConfirmationName by remember { mutableStateOf("") }
     val currentBudget = budgetPeriods.maxByOrNull { it.effectiveFromDate }?.caloriesPerDay
+    val requiredResetName = profile?.firstName?.trim().orEmpty()
 
     LaunchedEffect(profile) {
         if (!hasLoaded && profile != null) {
@@ -158,12 +163,50 @@ fun ProfileEditScreen(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Text(
-                    text = "Calorie estimation currently uses the local Gemma model.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 OutlinedButton(
+                    onClick = { showResetDialog = true },
+                    enabled = !isResetting,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (isResetting) "Resetting..." else "Reset app and restart onboarding")
+                }
+            }
+        }
+    }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isResetting) {
+                    showResetDialog = false
+                    resetConfirmationName = ""
+                }
+            },
+            title = {
+                Text("Irreversible erase")
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "This will completely and irreversibly erase all your data from this app, including profile, meal history, coach chats, downloaded models, and saved photos.",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        "There is no undo. Type your name exactly as shown to continue: ${requiredResetName.ifBlank { "(name not set)" }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    OutlinedTextField(
+                        value = resetConfirmationName,
+                        onValueChange = { resetConfirmationName = it },
+                        singleLine = true,
+                        enabled = !isResetting,
+                        label = { Text("Type your name") },
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
                     onClick = {
                         scope.launch {
                             isResetting = true
@@ -179,15 +222,27 @@ fun ProfileEditScreen(
                                 container.photoStorage.clearAll()
                             }
                             isResetting = false
+                            showResetDialog = false
+                            resetConfirmationName = ""
                             onResetToOnboarding()
                         }
                     },
-                    enabled = !isResetting,
-                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isResetting && requiredResetName.isNotBlank() && resetConfirmationName.trim() == requiredResetName,
                 ) {
-                    Text(if (isResetting) "Resetting..." else "Reset app and restart onboarding")
+                    Text(if (isResetting) "Erasing..." else "Erase everything")
                 }
-            }
-        }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showResetDialog = false
+                        resetConfirmationName = ""
+                    },
+                    enabled = !isResetting,
+                ) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
