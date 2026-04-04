@@ -17,5 +17,6 @@ data class FoodEntryEntity(
     val confirmationStatus: String,
     val source: String,
     val entryStatus: String,
+    val debugInteractionLog: String?,
     val deletedAtEpochMs: Long?,
 )

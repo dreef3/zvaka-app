@@ -2,6 +2,7 @@ package com.dreef3.weightlossapp.work
 
 import android.content.Context
 import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.dreef3.weightlossapp.domain.usecase.PhotoProcessingScheduler
@@ -24,6 +25,14 @@ class WorkManagerPhotoProcessingScheduler(
             )
             .build()
 
-        WorkManager.getInstance(context).enqueue(request)
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            UNIQUE_WORK_PREFIX + entryId,
+            ExistingWorkPolicy.REPLACE,
+            request,
+        )
+    }
+
+    companion object {
+        private const val UNIQUE_WORK_PREFIX = "photo-processing-"
     }
 }

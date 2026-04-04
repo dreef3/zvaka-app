@@ -36,4 +36,23 @@ class BackgroundPhotoCaptureUseCase(
         )
         return entryId
     }
+
+    suspend fun retry(entry: FoodEntry) {
+        val retryingEntry = entry.copy(
+            estimatedCalories = 0,
+            finalCalories = 0,
+            confidenceState = ConfidenceState.Failed,
+            detectedFoodLabel = null,
+            confidenceNotes = "Retrying photo estimation in background.",
+            confirmationStatus = ConfirmationStatus.NotRequired,
+            source = FoodEntrySource.AiEstimate,
+            entryStatus = FoodEntryStatus.Processing,
+        )
+        repository.upsert(retryingEntry)
+        scheduler.enqueue(
+            entryId = entry.id,
+            imagePath = entry.imagePath,
+            capturedAtEpochMs = entry.capturedAt.toEpochMilli(),
+        )
+    }
 }

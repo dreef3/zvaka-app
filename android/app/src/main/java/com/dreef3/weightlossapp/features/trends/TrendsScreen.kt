@@ -14,8 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +49,7 @@ import kotlinx.coroutines.withContext
 fun TrendsScreenRoute(
     container: AppContainer,
     onOpenHistoricalChat: (Long) -> Unit,
+    onOpenMealDebug: (Long) -> Unit,
 ) {
     val viewModel: TrendsViewModel = viewModel(factory = TrendsViewModelFactory(container))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -53,6 +58,8 @@ fun TrendsScreenRoute(
         state = state,
         onSelectWindow = viewModel::selectWindow,
         onOpenHistoricalChat = onOpenHistoricalChat,
+        onOpenMealDebug = onOpenMealDebug,
+        onRetryEntry = viewModel::retryEntry,
     )
 }
 
@@ -61,6 +68,8 @@ fun TrendsScreen(
     state: TrendsUiState,
     onSelectWindow: (TrendWindowType) -> Unit,
     onOpenHistoricalChat: (Long) -> Unit,
+    onOpenMealDebug: (Long) -> Unit,
+    onRetryEntry: (FoodEntry) -> Unit,
 ) {
     val groupedEntries = remember(state.historyItems) {
         state.historyItems.groupBy { it.date }
@@ -117,7 +126,11 @@ fun TrendsScreen(
                     },
                 ) { entry ->
                     when (entry) {
-                        is TrendsHistoryItem.Meal -> HistoryEntryCard(entry = entry.entry)
+                        is TrendsHistoryItem.Meal -> HistoryEntryCard(
+                            entry = entry.entry,
+                            onClick = { onOpenMealDebug(entry.entry.id) },
+                            onRetryEntry = { onRetryEntry(entry.entry) },
+                        )
                         is TrendsHistoryItem.CoachSession -> CoachHistoryCard(
                             session = entry.session,
                             onClick = { onOpenHistoricalChat(entry.session.id) },
@@ -260,6 +273,8 @@ private fun TrendMetricCard(
 @Composable
 private fun HistoryEntryCard(
     entry: FoodEntry,
+    onClick: () -> Unit,
+    onRetryEntry: () -> Unit,
 ) {
     val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = entry.imagePath) {
         value = withContext(Dispatchers.IO) {
@@ -281,6 +296,7 @@ private fun HistoryEntryCard(
     }
     val formatter = remember { DateTimeFormatter.ofPattern("MMM d") }
     Card(
+        onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
     ) {
@@ -310,11 +326,28 @@ private fun HistoryEntryCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    text = entry.detectedFoodLabel ?: "Meal photo",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = entry.detectedFoodLabel ?: "Meal photo",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (entry.entryStatus == FoodEntryStatus.NeedsManual) {
+                        IconButton(
+                            onClick = onRetryEntry,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Retry estimation",
+                            )
+                        }
+                    }
+                }
                 Text(
                     text = formatter.format(entry.entryDate),
                     style = MaterialTheme.typography.bodyMedium,

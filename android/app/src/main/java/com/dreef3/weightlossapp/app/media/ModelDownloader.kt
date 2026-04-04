@@ -12,21 +12,20 @@ open class ModelDownloader(
     private val modelStorage: ModelStorage,
 ) {
     open suspend fun downloadFrom(
-        url: String = ModelDownloadConfig.MODEL_URL,
-        expectedTotalBytes: Long = ModelDownloadConfig.MODEL_TOTAL_BYTES,
+        model: ModelDescriptor = ModelDescriptors.gemma,
         onProgress: ((downloadedBytes: Long, totalBytes: Long) -> Unit)? = null,
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
-            val destination = modelStorage.defaultModelFile
+            val destination = modelStorage.fileFor(model)
             val tempFile = File(destination.absolutePath + ".part")
             modelStorage.modelDirectory.mkdirs()
 
             Log.i(
                 TAG,
-                "Starting model download on thread=${Thread.currentThread().name} from $url to ${destination.absolutePath}",
+                "Starting model download on thread=${Thread.currentThread().name} from ${model.url} to ${destination.absolutePath}",
             )
 
-            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            val connection = (URL(model.url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 15_000
                 readTimeout = 60_000
                 requestMethod = "GET"
@@ -49,10 +48,10 @@ open class ModelDownloader(
                     connection.getHeaderField("Content-Range")
                         ?.substringAfterLast("/")
                         ?.toLongOrNull()
-                        ?: expectedTotalBytes
+                        ?: model.totalBytes
                 }
                 connection.contentLengthLong > 0L -> connection.contentLengthLong + resumedBytes
-                else -> expectedTotalBytes
+                else -> model.totalBytes
             }
 
             var downloadedBytes = resumedBytes

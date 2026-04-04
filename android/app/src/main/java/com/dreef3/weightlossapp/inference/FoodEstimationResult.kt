@@ -8,4 +8,5 @@ data class FoodEstimationResult(
     val detectedFoodLabel: String?,
     val confidenceNotes: String?,
     val detectedItems: List<String> = emptyList(),
+    val debugInteractionLog: String? = null,
 )

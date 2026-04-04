@@ -1,7 +1,10 @@
 package com.dreef3.weightlossapp.features.onboarding
 
+import com.dreef3.weightlossapp.app.network.NetworkConnectionMonitor
+import com.dreef3.weightlossapp.app.network.NetworkConnectionType
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.media.ModelDownloadState
 import com.dreef3.weightlossapp.app.media.ModelDownloadController
 import com.dreef3.weightlossapp.app.media.ModelStorage
@@ -32,6 +35,7 @@ data class OnboardingUiState(
     val isCompleted: Boolean = false,
     val estimatedBudgetCalories: Int? = null,
     val modelDownloadState: ModelDownloadState = ModelDownloadState(),
+    val showCellularDownloadConfirmation: Boolean = false,
 )
 
 class OnboardingViewModel(
@@ -41,6 +45,7 @@ class OnboardingViewModel(
     private val budgetCalculator: CalorieBudgetCalculator,
     private val modelDownloadController: ModelDownloadController,
     private val modelStorage: ModelStorage,
+    private val networkConnectionMonitor: NetworkConnectionMonitor,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
@@ -49,7 +54,7 @@ class OnboardingViewModel(
         viewModelScope.launch {
             combine(
                 profileRepository.observeProfile(),
-                modelDownloadController.observeState(),
+                modelDownloadController.observeState(ModelDescriptors.gemma),
             ) { profile, downloadState -> profile to downloadState }
                 .collect { (profile, downloadState) ->
                     _uiState.update { current ->
@@ -68,10 +73,10 @@ class OnboardingViewModel(
 
                         val estimatedBudget = populatedForm.estimatedBudgetOrNull(budgetCalculator)
                         val nextStep = when {
-                            current.step == OnboardingStep.Downloading && modelStorage.hasUsableModel() ->
+                            current.step == OnboardingStep.Downloading && modelStorage.hasUsableModel(ModelDescriptors.gemma) ->
                                 OnboardingStep.Ready
                             current.step == OnboardingStep.BudgetPreview &&
-                                modelStorage.hasUsableModel() ->
+                                modelStorage.hasUsableModel(ModelDescriptors.gemma) ->
                                 OnboardingStep.Ready
                             else -> current.step
                         }
@@ -81,6 +86,7 @@ class OnboardingViewModel(
                             form = populatedForm,
                             estimatedBudgetCalories = estimatedBudget,
                             modelDownloadState = downloadState,
+                            showCellularDownloadConfirmation = if (nextStep != current.step && nextStep == OnboardingStep.Ready) false else current.showCellularDownloadConfirmation,
                         )
                     }
                 }
@@ -135,11 +141,42 @@ class OnboardingViewModel(
         }
     }
 
-    fun startModelDownload() {
-        modelDownloadController.enqueueIfNeeded()
+    fun requestModelDownload() {
+        if (modelStorage.hasUsableModel(ModelDescriptors.gemma)) {
+            _uiState.update {
+                it.copy(step = OnboardingStep.Ready, showCellularDownloadConfirmation = false)
+            }
+            return
+        }
+        if (_uiState.value.modelDownloadState.isDownloading) {
+            _uiState.update {
+                it.copy(step = OnboardingStep.Downloading, showCellularDownloadConfirmation = false)
+            }
+            return
+        }
+        when (networkConnectionMonitor.currentConnectionType()) {
+            NetworkConnectionType.Cellular -> {
+                _uiState.update { it.copy(showCellularDownloadConfirmation = true) }
+            }
+            else -> startModelDownload()
+        }
+    }
+
+    fun confirmCellularModelDownload() {
+        _uiState.update { it.copy(showCellularDownloadConfirmation = false) }
+        startModelDownload()
+    }
+
+    fun dismissCellularModelDownloadConfirmation() {
+        _uiState.update { it.copy(showCellularDownloadConfirmation = false) }
+    }
+
+    private fun startModelDownload() {
+        modelDownloadController.enqueueIfNeeded(ModelDescriptors.gemma)
         _uiState.update {
             it.copy(
-                step = if (modelStorage.hasUsableModel()) OnboardingStep.Ready else OnboardingStep.Downloading,
+                step = if (modelStorage.hasUsableModel(ModelDescriptors.gemma)) OnboardingStep.Ready else OnboardingStep.Downloading,
+                showCellularDownloadConfirmation = false,
             )
         }
     }

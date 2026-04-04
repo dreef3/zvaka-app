@@ -28,14 +28,20 @@ class ModelDownloaderTest {
 
         val storage = ModelStorage(modelDirectoryOverride = createTempDirectory().toFile())
         val downloader = ModelDownloader(storage)
+        val descriptor = ModelDescriptor(
+            fileName = "model.litertlm",
+            displayName = "Test model",
+            url = server.url("/model.litertlm").toString(),
+            totalBytes = 5,
+            uniqueWorkName = "test-model-download",
+        )
 
         val result = downloader.downloadFrom(
-            url = server.url("/model.litertlm").toString(),
-            expectedTotalBytes = 5,
+            model = descriptor,
         )
 
         assertTrue(result.isSuccess)
-        assertEquals("abcde", storage.defaultModelFile.readText())
+        assertEquals("abcde", storage.fileFor(descriptor).readText())
 
         server.shutdown()
     }
@@ -64,17 +70,23 @@ class ModelDownloaderTest {
 
         val storage = ModelStorage(modelDirectoryOverride = createTempDirectory().toFile())
         val downloader = ModelDownloader(storage)
-        val partial = File(storage.modelDirectory, "${ModelStorage.DEFAULT_MODEL_FILE_NAME}.part")
+        val descriptor = ModelDescriptor(
+            fileName = "model.litertlm",
+            displayName = "Test model",
+            url = server.url("/model.litertlm").toString(),
+            totalBytes = 10,
+            uniqueWorkName = "test-model-download",
+        )
+        val partial = File(storage.modelDirectory, "${descriptor.fileName}.part")
         partial.parentFile?.mkdirs()
         partial.writeBytes(body.copyOfRange(0, 4))
 
         val result = downloader.downloadFrom(
-            url = server.url("/model.litertlm").toString(),
-            expectedTotalBytes = 10,
+            model = descriptor,
         )
 
         assertTrue(result.isSuccess)
-        assertArrayEquals(body, storage.defaultModelFile.readBytes())
+        assertArrayEquals(body, storage.fileFor(descriptor).readBytes())
 
         server.shutdown()
     }

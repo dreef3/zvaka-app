@@ -8,22 +8,26 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -97,6 +101,7 @@ fun TodaySummaryScreenRoute(
         },
         onOpenTrends = onNavigateToTrends,
         onOpenManualEntry = { manualEntryTarget = it },
+        onRetryEntry = viewModel::retryEntry,
     )
 
     if (manualEntryTarget != null) {
@@ -117,6 +122,7 @@ fun TodaySummaryScreen(
     onTakePhoto: () -> Unit,
     onOpenTrends: () -> Unit,
     onOpenManualEntry: (FoodEntry) -> Unit,
+    onRetryEntry: (FoodEntry) -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -161,7 +167,11 @@ fun TodaySummaryScreen(
                         Text("Needs manual calories", style = MaterialTheme.typography.titleLarge)
                     }
                     items(state.manualEntries, key = { it.id }) { entry ->
-                        ManualEntryCard(entry = entry, onOpenManualEntry = { onOpenManualEntry(entry) })
+                        ManualEntryCard(
+                            entry = entry,
+                            onOpenManualEntry = { onOpenManualEntry(entry) },
+                            onRetryEntry = { onRetryEntry(entry) },
+                        )
                     }
                 }
                 if (state.isEmpty && state.processingCount == 0 && state.manualEntries.isEmpty()) {
@@ -207,6 +217,7 @@ private fun StatusCard(
 private fun ManualEntryCard(
     entry: FoodEntry,
     onOpenManualEntry: () -> Unit,
+    onRetryEntry: () -> Unit,
 ) {
     val bitmap = remember(entry.imagePath) {
         entry.imagePath.takeIf { File(it).exists() }?.let(BitmapFactory::decodeFile)
@@ -219,7 +230,19 @@ private fun ManualEntryCard(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Needs manual calories", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Needs manual calories", style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = onRetryEntry, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "Retry estimation",
+                    )
+                }
+            }
             if (bitmap != null) {
                 Image(
                     bitmap = bitmap.asImageBitmap(),

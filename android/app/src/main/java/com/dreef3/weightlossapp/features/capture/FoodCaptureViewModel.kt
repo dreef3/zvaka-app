@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.app.media.ModelDescriptor
 import com.dreef3.weightlossapp.app.media.ModelDownloadController
+import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
@@ -13,8 +15,8 @@ import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntrySource
 import com.dreef3.weightlossapp.domain.usecase.ConfirmFoodEstimateUseCase
 import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
-import com.dreef3.weightlossapp.inference.FoodEstimationEngine
 import com.dreef3.weightlossapp.inference.FoodEstimationException
+import com.dreef3.weightlossapp.inference.FoodEstimationEngine
 import com.dreef3.weightlossapp.inference.FoodEstimationRequest
 import com.dreef3.weightlossapp.inference.FoodEstimationResult
 import kotlinx.coroutines.CoroutineDispatcher
@@ -35,10 +37,12 @@ class FoodCaptureViewModel(
     private val updateFoodEntryUseCase: UpdateFoodEntryUseCase,
     private val backgroundDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
+    private var activeModelDescriptor: ModelDescriptor = ModelDescriptors.gemma
+
     private val _uiState = MutableStateFlow(
         CaptureUiState(
-            modelAvailable = modelStorage.hasUsableModel(),
-            modelStatusMessage = if (modelStorage.hasUsableModel()) "Model ready on device." else "Model not installed yet.",
+            modelAvailable = false,
+            modelStatusMessage = "Checking model…",
         ),
     )
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
@@ -47,19 +51,20 @@ class FoodCaptureViewModel(
     private var pendingResult: FoodEstimationResult? = null
 
     init {
-        modelStorage.cleanupIncompleteModelFiles()
-        if (!modelStorage.hasUsableModel()) {
-            modelDownloadRepository.enqueueIfNeeded()
-        }
         viewModelScope.launch {
-            modelDownloadRepository.observeState().collect { state ->
-                val modelAvailable = modelStorage.hasUsableModel()
+            modelStorage.cleanupIncompleteModelFiles(activeModelDescriptor)
+            if (!modelStorage.hasUsableModel(activeModelDescriptor)) {
+                modelDownloadRepository.enqueueIfNeeded(activeModelDescriptor)
+            }
+            modelDownloadRepository.observeState(activeModelDescriptor).collect { state ->
+                val modelAvailable = modelStorage.hasUsableModel(activeModelDescriptor)
                 _uiState.update { current ->
                     current.copy(
                         isDownloadingModel = state.isDownloading,
                         modelAvailable = modelAvailable,
                         modelDownloadProgressPercent = state.progressPercent,
                         modelStatusMessage = modelStatusMessage(
+                            modelName = activeModelDescriptor.displayName,
                             modelAvailable = modelAvailable,
                             isDownloading = state.isDownloading,
                             progressPercent = state.progressPercent,
@@ -73,18 +78,26 @@ class FoodCaptureViewModel(
     }
 
     fun downloadModel() {
-        modelDownloadRepository.enqueueIfNeeded()
+        viewModelScope.launch {
+            modelDownloadRepository.enqueueIfNeeded(activeModelDescriptor)
+        }
     }
 
     fun analyzePhoto(imagePath: String) {
-        val modelAvailable = modelStorage.hasUsableModel()
+        val modelAvailable = modelStorage.hasUsableModel(activeModelDescriptor)
         val capturedAt = Instant.now()
         pendingImagePath = imagePath
         _uiState.value = CaptureUiState(
             imagePath = imagePath,
             isLoading = true,
             modelAvailable = modelAvailable,
-            modelStatusMessage = modelStatusMessage(modelAvailable, _uiState.value.isDownloadingModel, _uiState.value.modelDownloadProgressPercent, null),
+            modelStatusMessage = modelStatusMessage(
+                modelName = activeModelDescriptor.displayName,
+                modelAvailable = modelAvailable,
+                isDownloading = _uiState.value.isDownloadingModel,
+                progressPercent = _uiState.value.modelDownloadProgressPercent,
+                errorMessage = null,
+            ),
         )
 
         viewModelScope.launch(backgroundDispatcher) {
@@ -113,7 +126,7 @@ class FoodCaptureViewModel(
                             confidenceNotes = estimation.confidenceNotes,
                             awaitingConfirmation = true,
                             modelAvailable = true,
-                            modelStatusMessage = modelStatusMessage(true, false, 100, null),
+                            modelStatusMessage = modelStatusMessage(activeModelDescriptor.displayName, true, false, 100, null),
                         )
                     }
                 },
@@ -128,9 +141,10 @@ class FoodCaptureViewModel(
                     _uiState.value = CaptureUiState(
                         imagePath = imagePath,
                         errorMessage = message,
-                        modelAvailable = modelStorage.hasUsableModel(),
+                        modelAvailable = modelStorage.hasUsableModel(activeModelDescriptor),
                         modelStatusMessage = modelStatusMessage(
-                            modelAvailable = modelStorage.hasUsableModel(),
+                            modelName = activeModelDescriptor.displayName,
+                            modelAvailable = modelStorage.hasUsableModel(activeModelDescriptor),
                             isDownloading = _uiState.value.isDownloadingModel,
                             progressPercent = _uiState.value.modelDownloadProgressPercent,
                             errorMessage = null,
@@ -151,9 +165,10 @@ class FoodCaptureViewModel(
             _uiState.value = CaptureUiState(
                 shouldRetake = true,
                 errorMessage = "Take another photo.",
-                modelAvailable = modelStorage.hasUsableModel(),
+                modelAvailable = modelStorage.hasUsableModel(activeModelDescriptor),
                 modelStatusMessage = modelStatusMessage(
-                    modelAvailable = modelStorage.hasUsableModel(),
+                    modelName = activeModelDescriptor.displayName,
+                    modelAvailable = modelStorage.hasUsableModel(activeModelDescriptor),
                     isDownloading = _uiState.value.isDownloadingModel,
                     progressPercent = _uiState.value.modelDownloadProgressPercent,
                     errorMessage = null,
@@ -206,22 +221,23 @@ class FoodCaptureViewModel(
             confidenceNotes = estimation.confidenceNotes,
             savedEntryId = entryId,
             modelAvailable = true,
-            modelStatusMessage = modelStatusMessage(true, false, 100, null),
+            modelStatusMessage = modelStatusMessage(activeModelDescriptor.displayName, true, false, 100, null),
             modelDownloadProgressPercent = 100,
         )
     }
 
     private fun modelStatusMessage(
+        modelName: String,
         modelAvailable: Boolean,
         isDownloading: Boolean,
         progressPercent: Int?,
         errorMessage: String?,
     ): String = when {
-        modelAvailable -> "Model ready on device."
-        isDownloading && progressPercent != null -> "Downloading model from Hugging Face... $progressPercent%"
-        isDownloading -> "Downloading model from Hugging Face..."
-        errorMessage != null -> "Model download failed."
-        else -> "Model not installed yet."
+        modelAvailable -> "$modelName ready on device."
+        isDownloading && progressPercent != null -> "Downloading $modelName from Hugging Face... $progressPercent%"
+        isDownloading -> "Downloading $modelName from Hugging Face..."
+        errorMessage != null -> "$modelName download failed."
+        else -> "$modelName not installed yet."
     }
 }
 

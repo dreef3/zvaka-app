@@ -1,7 +1,11 @@
 package com.dreef3.weightlossapp.features.onboarding
 
 import androidx.test.core.app.ApplicationProvider
+import com.dreef3.weightlossapp.app.network.NetworkConnectionMonitor
+import com.dreef3.weightlossapp.app.network.NetworkConnectionType
 import com.dreef3.weightlossapp.app.media.ModelDownloadController
+import com.dreef3.weightlossapp.app.media.ModelDescriptor
+import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.media.ModelDownloadState
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
@@ -81,15 +85,40 @@ class OnboardingViewModelTest {
         val modelController = FakeModelDownloadController()
         val viewModel = createViewModel(repository, storage, modelController)
 
-        viewModel.startModelDownload()
+        viewModel.requestModelDownload()
         advanceUntilIdle()
         assertEquals(OnboardingStep.Downloading, viewModel.uiState.value.step)
 
-        storage.defaultModelFile.writeText("model")
+        storage.fileFor(ModelDescriptors.smolVlm).writeText("model")
         modelController.state.value = ModelDownloadState(isDownloading = false, progressPercent = 100)
         advanceUntilIdle()
 
         assertEquals(OnboardingStep.Ready, viewModel.uiState.value.step)
+    }
+
+    @Test
+    fun requestModelDownloadOnCellularShowsConfirmationBeforeStarting() = runTest(dispatcher) {
+        val repository = FakeProfileRepository()
+        val storage = ModelStorage(modelDirectoryOverride = kotlin.io.path.createTempDirectory().toFile())
+        val modelController = FakeModelDownloadController()
+        val viewModel = createViewModel(
+            repository = repository,
+            storage = storage,
+            modelController = modelController,
+            networkConnectionMonitor = FakeNetworkConnectionMonitor(NetworkConnectionType.Cellular),
+        )
+
+        viewModel.requestModelDownload()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showCellularDownloadConfirmation)
+        assertEquals(0, modelController.enqueueCalls)
+
+        viewModel.confirmCellularModelDownload()
+        advanceUntilIdle()
+
+        assertEquals(OnboardingStep.Downloading, viewModel.uiState.value.step)
+        assertEquals(1, modelController.enqueueCalls)
     }
 
     @Test
@@ -116,6 +145,7 @@ class OnboardingViewModelTest {
         storage: ModelStorage,
         modelController: FakeModelDownloadController,
         preferences: AppPreferences = AppPreferences(ApplicationProvider.getApplicationContext()),
+        networkConnectionMonitor: NetworkConnectionMonitor = FakeNetworkConnectionMonitor(NetworkConnectionType.Wifi),
     ): OnboardingViewModel {
         val saveUseCase = SaveUserProfileUseCase(
             profileRepository = repository,
@@ -129,8 +159,15 @@ class OnboardingViewModelTest {
             budgetCalculator = CalorieBudgetCalculator(),
             modelDownloadController = modelController,
             modelStorage = storage,
+            networkConnectionMonitor = networkConnectionMonitor,
         )
     }
+}
+
+private class FakeNetworkConnectionMonitor(
+    private val type: NetworkConnectionType,
+) : NetworkConnectionMonitor(ApplicationProvider.getApplicationContext()) {
+    override fun currentConnectionType(): NetworkConnectionType = type
 }
 
 private class FakeProfileRepository : ProfileRepository {
@@ -159,9 +196,9 @@ private class FakeModelDownloadController : ModelDownloadController {
     val state = MutableStateFlow(ModelDownloadState())
     var enqueueCalls = 0
 
-    override fun enqueueIfNeeded() {
+    override fun enqueueIfNeeded(model: ModelDescriptor) {
         enqueueCalls += 1
     }
 
-    override fun observeState(): Flow<ModelDownloadState> = state
+    override fun observeState(model: ModelDescriptor): Flow<ModelDownloadState> = state
 }

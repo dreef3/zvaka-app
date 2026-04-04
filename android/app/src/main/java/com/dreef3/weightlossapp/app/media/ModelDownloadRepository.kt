@@ -10,8 +10,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 interface ModelDownloadController {
-    fun enqueueIfNeeded()
-    fun observeState(): Flow<ModelDownloadState>
+    fun enqueueIfNeeded(model: ModelDescriptor)
+    fun observeState(model: ModelDescriptor): Flow<ModelDownloadState>
 }
 
 class ModelDownloadRepository(
@@ -20,44 +20,46 @@ class ModelDownloadRepository(
 ) : ModelDownloadController {
     private val workManager = WorkManager.getInstance(context)
 
-    override fun enqueueIfNeeded() {
-        if (modelStorage.hasUsableModel()) return
+    override fun enqueueIfNeeded(model: ModelDescriptor) {
+        if (modelStorage.hasUsableModel(model)) return
         val request = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
             .setInputData(
                 Data.Builder()
-                    .putString(ModelDownloadWorker.KEY_MODEL_URL, ModelDownloadConfig.MODEL_URL)
-                    .putLong(ModelDownloadWorker.KEY_TOTAL_BYTES, ModelDownloadConfig.MODEL_TOTAL_BYTES)
-                    .putString(ModelDownloadWorker.KEY_MODEL_NAME, ModelDownloadConfig.MODEL_DISPLAY_NAME)
+                    .putString(ModelDownloadWorker.KEY_MODEL_URL, model.url)
+                    .putLong(ModelDownloadWorker.KEY_TOTAL_BYTES, model.totalBytes)
+                    .putString(ModelDownloadWorker.KEY_MODEL_NAME, model.displayName)
+                    .putString(ModelDownloadWorker.KEY_MODEL_FILE_NAME, model.fileName)
+                    .putString(ModelDownloadWorker.KEY_WORK_NAME, model.uniqueWorkName)
                     .build(),
             )
             .build()
 
         workManager.enqueueUniqueWork(
-            ModelDownloadConfig.MODEL_DOWNLOAD_WORK_NAME,
+            model.uniqueWorkName,
             ExistingWorkPolicy.KEEP,
             request,
         )
     }
 
-    override fun observeState(): Flow<ModelDownloadState> =
-        workManager.getWorkInfosForUniqueWorkFlow(ModelDownloadConfig.MODEL_DOWNLOAD_WORK_NAME)
+    override fun observeState(model: ModelDescriptor): Flow<ModelDownloadState> =
+        workManager.getWorkInfosForUniqueWorkFlow(model.uniqueWorkName)
             .map { infos ->
-                if (modelStorage.hasUsableModel()) {
+                if (modelStorage.hasUsableModel(model)) {
                     return@map ModelDownloadState(
                         isDownloading = false,
                         progressPercent = 100,
-                        downloadedBytes = modelStorage.defaultModelFile.length(),
-                        totalBytes = modelStorage.defaultModelFile.length().coerceAtLeast(ModelDownloadConfig.MODEL_TOTAL_BYTES),
+                        downloadedBytes = modelStorage.fileFor(model).length(),
+                        totalBytes = modelStorage.fileFor(model).length().coerceAtLeast(model.totalBytes),
                     )
                 }
 
                 val info = infos.firstOrNull()
                 if (info == null) {
-                    return@map ModelDownloadState()
+                    return@map ModelDownloadState(totalBytes = model.totalBytes)
                 }
 
                 val downloadedBytes = info.progress.getLong(ModelDownloadWorker.KEY_PROGRESS_DOWNLOADED_BYTES, 0L)
-                val totalBytes = info.progress.getLong(ModelDownloadWorker.KEY_PROGRESS_TOTAL_BYTES, ModelDownloadConfig.MODEL_TOTAL_BYTES)
+                val totalBytes = info.progress.getLong(ModelDownloadWorker.KEY_PROGRESS_TOTAL_BYTES, model.totalBytes)
                 val progressPercent = if (totalBytes > 0) ((downloadedBytes * 100L) / totalBytes).toInt() else null
                 when (info.state) {
                     WorkInfo.State.RUNNING,
@@ -73,7 +75,7 @@ class ModelDownloadRepository(
                     WorkInfo.State.SUCCEEDED -> ModelDownloadState(
                         isDownloading = false,
                         progressPercent = 100,
-                        downloadedBytes = modelStorage.defaultModelFile.length(),
+                        downloadedBytes = modelStorage.fileFor(model).length(),
                         totalBytes = totalBytes,
                     )
 

@@ -15,12 +15,15 @@ import com.dreef3.weightlossapp.domain.model.TrendWindowType
 import com.dreef3.weightlossapp.domain.repository.CoachChatRepository
 import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import com.dreef3.weightlossapp.domain.repository.ProfileRepository
+import com.dreef3.weightlossapp.domain.usecase.BackgroundPhotoCaptureUseCase
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 sealed interface TrendsHistoryItem {
@@ -52,6 +55,7 @@ class TrendsViewModel(
     foodEntryRepository: FoodEntryRepository,
     coachChatRepository: CoachChatRepository,
     trendAggregator: TrendAggregator,
+    private val backgroundPhotoCaptureUseCase: BackgroundPhotoCaptureUseCase,
 ) : ViewModel() {
     private val today = localDateProvider.today()
     private val selectedWindow = MutableStateFlow(TrendWindowType.Last7Days)
@@ -123,6 +127,12 @@ class TrendsViewModel(
     fun selectWindow(windowType: TrendWindowType) {
         selectedWindow.update { windowType }
     }
+
+    fun retryEntry(entry: FoodEntry) {
+        viewModelScope.launch(Dispatchers.IO) {
+            backgroundPhotoCaptureUseCase.retry(entry)
+        }
+    }
 }
 
 class TrendsViewModelFactory(
@@ -136,6 +146,7 @@ class TrendsViewModelFactory(
             foodEntryRepository = container.foodEntryRepository,
             coachChatRepository = container.coachChatRepository,
             trendAggregator = container.trendAggregator,
+            backgroundPhotoCaptureUseCase = container.backgroundPhotoCaptureUseCase,
         ) as T
     }
 }

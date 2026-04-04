@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -25,11 +26,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.features.chat.CoachChatScreenRoute
 import com.dreef3.weightlossapp.features.capture.FoodCaptureScreenRoute
 import com.dreef3.weightlossapp.features.onboarding.OnboardingScreenRoute
 import com.dreef3.weightlossapp.features.onboarding.ProfileEditScreen
 import com.dreef3.weightlossapp.features.summary.TodaySummaryScreenRoute
+import com.dreef3.weightlossapp.features.trends.MealDebugScreenRoute
 import com.dreef3.weightlossapp.features.trends.TrendsScreenRoute
 
 private data class BottomDestination(
@@ -137,12 +140,23 @@ fun AppNavHost(
                     onOpenHistoricalChat = { sessionId ->
                         navController.navigate(AppDestinations.historicalChat(sessionId))
                     },
+                    onOpenMealDebug = { entryId ->
+                        navController.navigate(AppDestinations.mealDebug(entryId))
+                    },
                 )
             }
             composable(AppDestinations.Chat) {
-                CoachChatScreenRoute(
-                    container = AppContainer.instance,
-                )
+                val coachReady = AppContainer.instance.modelStorage.hasUsableModel(ModelDescriptors.gemma)
+                if (coachReady) {
+                    CoachChatScreenRoute(
+                        container = AppContainer.instance,
+                    )
+                } else {
+                    Text(
+                        text = "Coach will unlock after Gemma finishes downloading on Wi‑Fi.",
+                        modifier = Modifier.padding(24.dp),
+                    )
+                }
             }
             composable(
                 route = "${AppDestinations.ChatHistory}/{sessionId}",
@@ -153,6 +167,16 @@ fun AppNavHost(
                     container = AppContainer.instance,
                     sessionId = sessionId,
                     readOnly = true,
+                )
+            }
+            composable(
+                route = "${AppDestinations.MealDebug}/{entryId}",
+                arguments = listOf(navArgument("entryId") { type = NavType.LongType }),
+            ) { backStack ->
+                val entryId = backStack.arguments?.getLong("entryId") ?: return@composable
+                MealDebugScreenRoute(
+                    container = AppContainer.instance,
+                    entryId = entryId,
                 )
             }
             composable(AppDestinations.Profile) {

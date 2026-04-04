@@ -132,7 +132,11 @@ class LiteRtDietChatEngine(
                 Contents.of(listOf(Content.Text(prompt))),
                 object : MessageCallback {
                     override fun onMessage(message: Message) {
+                        message.channels["thought"]?.takeIf { it.isNotBlank() }?.let { thought ->
+                            debugLog("thought chunk=${thought.take(800)}")
+                        }
                         debugLog("onMessage chunkLength=${message.toString().length}")
+                        debugLog("text chunk=${message.toString().take(800)}")
                         builder.append(message.toString())
                     }
 
@@ -153,7 +157,7 @@ class LiteRtDietChatEngine(
                         }
                     }
                 },
-                emptyMap(),
+                mapOf("enable_thinking" to "true"),
             )
         }
 

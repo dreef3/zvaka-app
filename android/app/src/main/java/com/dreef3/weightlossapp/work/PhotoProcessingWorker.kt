@@ -51,9 +51,10 @@ class PhotoProcessingWorker(
                     confirmationStatus = ConfirmationStatus.NotRequired,
                     source = FoodEntrySource.AiEstimate,
                     entryStatus = FoodEntryStatus.Ready,
+                    debugInteractionLog = estimation.debugInteractionLog,
                 )
             },
-            onFailure = {
+            onFailure = { throwable ->
                 FoodEntry(
                     id = entryId,
                     capturedAt = capturedAt,
@@ -67,6 +68,10 @@ class PhotoProcessingWorker(
                     confirmationStatus = ConfirmationStatus.NotRequired,
                     source = FoodEntrySource.AiEstimate,
                     entryStatus = FoodEntryStatus.NeedsManual,
+                    debugInteractionLog = when (throwable) {
+                        is com.dreef3.weightlossapp.inference.FoodEstimationException -> throwable.debugInteractionLog
+                        else -> throwable.stackTraceToString()
+                    },
                 )
             },
         )

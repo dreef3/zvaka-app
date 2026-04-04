@@ -22,15 +22,22 @@ class ModelDownloadWorker(
 
     override suspend fun doWork(): Result {
         createChannelIfNeeded()
-        val url = inputData.getString(KEY_MODEL_URL) ?: ModelDownloadConfig.MODEL_URL
-        val totalBytes = inputData.getLong(KEY_TOTAL_BYTES, ModelDownloadConfig.MODEL_TOTAL_BYTES)
-        val modelName = inputData.getString(KEY_MODEL_NAME) ?: ModelDownloadConfig.MODEL_DISPLAY_NAME
+        val modelFileName = inputData.getString(KEY_MODEL_FILE_NAME) ?: ModelDescriptors.gemma.fileName
+        val url = inputData.getString(KEY_MODEL_URL) ?: ModelDescriptors.gemma.url
+        val totalBytes = inputData.getLong(KEY_TOTAL_BYTES, ModelDescriptors.gemma.totalBytes)
+        val modelName = inputData.getString(KEY_MODEL_NAME) ?: ModelDescriptors.gemma.displayName
+        val descriptor = ModelDescriptor(
+            fileName = modelFileName,
+            displayName = modelName,
+            url = url,
+            totalBytes = totalBytes,
+            uniqueWorkName = inputData.getString(KEY_WORK_NAME) ?: ModelDescriptors.gemma.uniqueWorkName,
+        )
 
         setForeground(createForegroundInfo(modelName = modelName, progressPercent = 0))
 
         val result = modelDownloader.downloadFrom(
-            url = url,
-            expectedTotalBytes = totalBytes,
+            model = descriptor,
         ) { downloadedBytes, expectedBytes ->
             val progressPercent = if (expectedBytes > 0L) ((downloadedBytes * 100L) / expectedBytes).toInt() else 0
             setProgressAsync(
@@ -96,6 +103,8 @@ class ModelDownloadWorker(
         const val KEY_MODEL_URL = "model_url"
         const val KEY_TOTAL_BYTES = "total_bytes"
         const val KEY_MODEL_NAME = "model_name"
+        const val KEY_MODEL_FILE_NAME = "model_file_name"
+        const val KEY_WORK_NAME = "work_name"
         const val KEY_PROGRESS_DOWNLOADED_BYTES = "progress_downloaded_bytes"
         const val KEY_PROGRESS_TOTAL_BYTES = "progress_total_bytes"
         const val KEY_ERROR_MESSAGE = "error_message"

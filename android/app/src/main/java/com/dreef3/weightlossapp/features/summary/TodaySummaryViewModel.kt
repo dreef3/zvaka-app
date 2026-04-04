@@ -86,6 +86,12 @@ class TodaySummaryViewModel(
             saveManualCaloriesUseCase.save(entry, calories)
         }
     }
+
+    fun retryEntry(entry: FoodEntry) {
+        viewModelScope.launch(Dispatchers.IO) {
+            backgroundPhotoCaptureUseCase.retry(entry)
+        }
+    }
 }
 
 class TodaySummaryViewModelFactory(

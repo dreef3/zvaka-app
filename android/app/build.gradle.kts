@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "com.dreef3.weightlossapp"
     compileSdk = 35
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "com.dreef3.weightlossapp"
@@ -44,6 +45,13 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     packaging {
@@ -84,10 +92,17 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("com.google.ai.edge.litert:litert:2.1.0")
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
-    implementation("com.google.android.gms:play-services-tflite-java:16.4.0")
-    implementation("com.google.android.gms:play-services-tflite-gpu:16.4.0")
-    implementation("com.google.android.gms:play-services-tflite-support:16.4.0")
+    implementation("com.google.android.gms:play-services-tflite-java:16.4.0") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+    }
+    implementation("com.google.android.gms:play-services-tflite-gpu:16.4.0") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+    }
+    implementation("com.google.android.gms:play-services-tflite-support:16.4.0") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+    }
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

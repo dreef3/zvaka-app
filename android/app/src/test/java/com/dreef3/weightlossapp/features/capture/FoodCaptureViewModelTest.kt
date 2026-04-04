@@ -1,15 +1,20 @@
 package com.dreef3.weightlossapp.features.capture
 
+import androidx.test.core.app.ApplicationProvider
 import com.dreef3.weightlossapp.app.media.ModelDownloadController
+import com.dreef3.weightlossapp.app.media.ModelDescriptor
+import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.media.ModelDownloadState
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
+import com.dreef3.weightlossapp.data.preferences.AppPreferences
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntry
 import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import com.dreef3.weightlossapp.domain.usecase.ConfirmFoodEstimateUseCase
 import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
+import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import com.dreef3.weightlossapp.inference.FoodEstimationEngine
 import com.dreef3.weightlossapp.inference.FoodEstimationRequest
 import com.dreef3.weightlossapp.inference.FoodEstimationResult
@@ -29,10 +34,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.time.LocalDate
 import java.time.ZoneId
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
 class FoodCaptureViewModelTest {
     private val dispatcher = StandardTestDispatcher()
 
@@ -49,6 +57,8 @@ class FoodCaptureViewModelTest {
     @Test
     fun highConfidenceEstimateSavesImmediately() = runTest(dispatcher) {
         val repository = FakeFoodEntryRepository()
+        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
         val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
                 FoodEstimationResult(
@@ -60,6 +70,7 @@ class FoodCaptureViewModelTest {
             ),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
+            preferences = preferences,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
@@ -77,6 +88,8 @@ class FoodCaptureViewModelTest {
     @Test
     fun nonHighConfidenceRequiresConfirmationAndRejectRequestsRetake() = runTest(dispatcher) {
         val repository = FakeFoodEntryRepository()
+        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
         val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
                 FoodEstimationResult(
@@ -88,6 +101,7 @@ class FoodCaptureViewModelTest {
             ),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
+            preferences = preferences,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
@@ -106,15 +120,12 @@ class FoodCaptureViewModelTest {
     }
 
     @Test
-    fun downloadModelUpdatesAvailability() = runTest(dispatcher) {
+    fun initRequestsSelectedModelDownloadWhenMissing() = runTest(dispatcher) {
         val modelStorage = realModelStorage(available = false)
-        val downloadRepository = FakeModelDownloadRepository(
-            state = ModelDownloadState(isDownloading = false, progressPercent = 100),
-            onEnqueue = {
-                modelStorage.defaultModelFile.writeText("model")
-            },
-        )
-        val viewModel = FoodCaptureViewModel(
+        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
+        val downloadRepository = FakeModelDownloadRepository()
+        FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
                 FoodEstimationResult(
                     estimatedCalories = 500,
@@ -125,21 +136,23 @@ class FoodCaptureViewModelTest {
             ),
             modelStorage = modelStorage,
             modelDownloadRepository = downloadRepository,
+            preferences = preferences,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
             backgroundDispatcher = dispatcher,
         )
-
-        viewModel.downloadModel()
         advanceUntilIdle()
 
-        assertTrue(viewModel.uiState.value.modelAvailable)
-        assertEquals("Model ready on device.", viewModel.uiState.value.modelStatusMessage)
+        assertEquals(1, downloadRepository.enqueueCalls)
+        assertEquals(ModelDescriptors.smolVlm, downloadRepository.lastRequestedModel)
     }
 
     @Test
-    fun downloadingStateIsReflectedInUi() = runTest(dispatcher) {
+    fun downloadModelDelegatesToSelectedModelController() = runTest(dispatcher) {
+        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
+        val downloadRepository = FakeModelDownloadRepository()
         val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
                 FoodEstimationResult(
@@ -150,20 +163,20 @@ class FoodCaptureViewModelTest {
                 ),
             ),
             modelStorage = realModelStorage(available = false),
-            modelDownloadRepository = FakeModelDownloadRepository(
-                state = ModelDownloadState(isDownloading = true, progressPercent = 42),
-            ),
+            modelDownloadRepository = downloadRepository,
+            preferences = preferences,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
             backgroundDispatcher = dispatcher,
         )
-
+        advanceUntilIdle()
+        val initialEnqueueCalls = downloadRepository.enqueueCalls
+        viewModel.downloadModel()
         advanceUntilIdle()
 
-        assertTrue(viewModel.uiState.value.isDownloadingModel)
-        assertEquals(42, viewModel.uiState.value.modelDownloadProgressPercent)
-        assertEquals("Downloading model from Hugging Face... 42%", viewModel.uiState.value.modelStatusMessage)
+        assertEquals(initialEnqueueCalls + 1, downloadRepository.enqueueCalls)
+        assertEquals(ModelDescriptors.smolVlm, downloadRepository.lastRequestedModel)
     }
 
     private fun realModelStorage(available: Boolean): ModelStorage {
@@ -171,9 +184,9 @@ class FoodCaptureViewModelTest {
         val storage = ModelStorage(modelDirectoryOverride = tempDir)
         storage.modelDirectory.mkdirs()
         if (available) {
-            storage.defaultModelFile.writeText("model")
+            storage.fileFor(ModelDescriptors.smolVlm).writeText("model")
         } else {
-            storage.defaultModelFile.delete()
+            storage.fileFor(ModelDescriptors.smolVlm).delete()
         }
         return storage
     }
@@ -205,12 +218,21 @@ private class FakeFoodEntryRepository : FoodEntryRepository {
 }
 
 private class FakeModelDownloadRepository(
-    private val state: ModelDownloadState = ModelDownloadState(),
     private val onEnqueue: () -> Unit = {},
 ) : ModelDownloadController {
-    override fun enqueueIfNeeded() {
+    private val state = MutableStateFlow(ModelDownloadState())
+    var enqueueCalls = 0
+    var lastRequestedModel: ModelDescriptor? = null
+
+    override fun enqueueIfNeeded(model: ModelDescriptor) {
+        enqueueCalls += 1
+        lastRequestedModel = model
         onEnqueue()
     }
 
-    override fun observeState() = flowOf(state)
+    override fun observeState(model: ModelDescriptor) = state
+
+    fun updateState(value: ModelDownloadState) {
+        state.value = value
+    }
 }

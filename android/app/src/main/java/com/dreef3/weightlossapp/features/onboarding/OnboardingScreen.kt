@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -64,7 +65,9 @@ fun OnboardingScreenRoute(
         onActivityLevelChanged = { value -> vm.updateForm { it.copy(activityLevel = value) } },
         onBackFromProfile = vm::backFromProfile,
         onSubmitProfile = vm::submitProfile,
-        onStartModelDownload = vm::startModelDownload,
+        onStartModelDownload = vm::requestModelDownload,
+        onConfirmCellularDownload = vm::confirmCellularModelDownload,
+        onDismissCellularDownload = vm::dismissCellularModelDownloadConfirmation,
         onFinish = vm::completeSetup,
     )
 }
@@ -82,6 +85,8 @@ fun OnboardingScreen(
     onBackFromProfile: () -> Unit,
     onSubmitProfile: () -> Unit,
     onStartModelDownload: () -> Unit,
+    onConfirmCellularDownload: () -> Unit,
+    onDismissCellularDownload: () -> Unit,
     onFinish: () -> Unit,
 ) {
     Column(
@@ -107,12 +112,19 @@ fun OnboardingScreen(
             OnboardingStep.BudgetPreview -> BudgetPreviewStep(
                 firstName = state.form.firstName,
                 estimatedBudgetCalories = state.estimatedBudgetCalories ?: 0,
+                downloadAlreadyInProgress = state.modelDownloadState.isDownloading,
                 onContinue = onStartModelDownload,
             )
             OnboardingStep.Downloading -> DownloadingStep(state)
             OnboardingStep.Ready -> ReadyStep(
                 firstName = state.form.firstName,
                 onFinish = onFinish,
+            )
+        }
+        if (state.showCellularDownloadConfirmation) {
+            CellularDownloadConfirmationDialog(
+                onConfirm = onConfirmCellularDownload,
+                onDismiss = onDismissCellularDownload,
             )
         }
     }
@@ -217,6 +229,7 @@ private fun ProfileStep(
 private fun BudgetPreviewStep(
     firstName: String,
     estimatedBudgetCalories: Int,
+    downloadAlreadyInProgress: Boolean,
     onContinue: () -> Unit,
 ) {
     StepCard {
@@ -241,7 +254,7 @@ private fun BudgetPreviewStep(
             onClick = onContinue,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Download model and continue")
+            Text(if (downloadAlreadyInProgress) "See download progress" else "Start model download")
         }
     }
 }
@@ -317,6 +330,32 @@ private fun ReadyStep(
             Text("Everything is ready, let’s go")
         }
     }
+}
+
+@Composable
+private fun CellularDownloadConfirmationDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download over cellular?") },
+        text = {
+            Text(
+                "The local model is large and can use a lot of mobile data. Continue only if you want to download it over cellular now.",
+            )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Download anyway")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Wait for Wi-Fi")
+            }
+        },
+    )
 }
 
 @Composable

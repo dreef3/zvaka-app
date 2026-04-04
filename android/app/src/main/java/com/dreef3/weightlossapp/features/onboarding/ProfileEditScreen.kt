@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkManager
 import com.dreef3.weightlossapp.app.di.AppContainer
-import com.dreef3.weightlossapp.app.media.ModelDownloadConfig
+import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileRequest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -159,7 +159,7 @@ fun ProfileEditScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Coach now offers a one-tap overview suggestion inside chat instead of opening with an automatic report.",
+                    text = "Calorie estimation currently uses the local Gemma model.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -169,7 +169,9 @@ fun ProfileEditScreen(
                             isResetting = true
                             withContext(Dispatchers.IO) {
                                 WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDownloadConfig.MODEL_DOWNLOAD_WORK_NAME)
+                                    .cancelUniqueWork(ModelDescriptors.smolVlm.uniqueWorkName)
+                                WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDescriptors.gemma.uniqueWorkName)
                                 WorkManager.getInstance(container.appContext).cancelAllWork()
                                 container.database.clearAllTables()
                                 container.preferences.reset()

@@ -77,6 +77,7 @@ internal fun FoodEntryEntity.toDomain(): FoodEntry = FoodEntry(
     confirmationStatus = ConfirmationStatus.valueOf(confirmationStatus),
     source = FoodEntrySource.valueOf(source),
     entryStatus = FoodEntryStatus.valueOf(entryStatus),
+    debugInteractionLog = debugInteractionLog,
     deletedAt = deletedAtEpochMs?.let(Instant::ofEpochMilli),
 )
 
@@ -93,6 +94,7 @@ internal fun FoodEntry.toEntity(): FoodEntryEntity = FoodEntryEntity(
     confirmationStatus = confirmationStatus.name,
     source = source.name,
     entryStatus = entryStatus.name,
+    debugInteractionLog = debugInteractionLog,
     deletedAtEpochMs = deletedAt?.toEpochMilli(),
 )
 

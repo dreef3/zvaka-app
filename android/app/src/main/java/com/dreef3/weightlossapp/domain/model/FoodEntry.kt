@@ -39,5 +39,6 @@ data class FoodEntry(
     val confirmationStatus: ConfirmationStatus,
     val source: FoodEntrySource,
     val entryStatus: FoodEntryStatus,
+    val debugInteractionLog: String? = null,
     val deletedAt: Instant? = null,
 )
