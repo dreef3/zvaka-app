@@ -54,7 +54,7 @@ data class TodaySummaryUiState(
 class TodaySummaryViewModel(
     localDateProvider: LocalDateProvider,
     profileRepository: ProfileRepository,
-    foodEntryRepository: FoodEntryRepository,
+    private val foodEntryRepository: FoodEntryRepository,
     coachChatRepository: CoachChatRepository,
     summaryAggregator: SummaryAggregator,
     private val backgroundPhotoCaptureUseCase: BackgroundPhotoCaptureUseCase,
@@ -135,6 +135,12 @@ class TodaySummaryViewModel(
     fun retryEntry(entry: FoodEntry) {
         viewModelScope.launch(Dispatchers.IO) {
             backgroundPhotoCaptureUseCase.retry(entry)
+        }
+    }
+
+    fun deleteEntry(entry: FoodEntry) {
+        viewModelScope.launch(Dispatchers.IO) {
+            foodEntryRepository.delete(entry)
         }
     }
 }

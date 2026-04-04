@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.dreef3.weightlossapp.data.local.entity.FoodEntryEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -23,4 +24,7 @@ interface FoodEntryDao {
 
     @Query("SELECT * FROM food_entry WHERE id = :entryId LIMIT 1")
     suspend fun getById(entryId: Long): FoodEntryEntity?
+
+    @Update
+    suspend fun update(entry: FoodEntryEntity)
 }

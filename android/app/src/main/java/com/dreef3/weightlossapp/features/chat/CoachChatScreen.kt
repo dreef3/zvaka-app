@@ -1,5 +1,6 @@
 package com.dreef3.weightlossapp.features.chat
 
+import android.content.ClipData
 import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,13 +40,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -58,6 +61,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.chat.ChatRole
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun CoachChatScreenRoute(
@@ -245,8 +249,9 @@ private fun ChatBubble(
     text: String,
     imagePath: String?,
 ) {
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val isUser = role == ChatRole.User
     val background = if (isUser) {
         MaterialTheme.colorScheme.primaryContainer
@@ -261,8 +266,14 @@ private fun ChatBubble(
             modifier = Modifier.combinedClickable(
                 onClick = {},
                 onLongClick = {
-                    clipboardManager.setText(AnnotatedString(text))
-                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    scope.launch {
+                        clipboard.setClipEntry(
+                            ClipEntry(
+                                ClipData.newPlainText("Coach message", text),
+                            ),
+                        )
+                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    }
                 },
             ),
             colors = CardDefaults.cardColors(containerColor = background),

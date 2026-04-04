@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,6 +69,7 @@ fun TodaySummaryScreenRoute(
     val context = LocalContext.current
     var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
     var manualEntryTarget by remember { mutableStateOf<FoodEntry?>(null) }
+    var deleteEntryTarget by remember { mutableStateOf<FoodEntry?>(null) }
 
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
@@ -109,6 +112,7 @@ fun TodaySummaryScreenRoute(
         onOpenMealDebug = onOpenMealDebug,
         onOpenManualEntry = { manualEntryTarget = it },
         onRetryEntry = viewModel::retryEntry,
+        onDeleteEntry = { deleteEntryTarget = it },
     )
 
     if (manualEntryTarget != null) {
@@ -118,6 +122,29 @@ fun TodaySummaryScreenRoute(
             onSave = { calories ->
                 viewModel.saveManualCalories(manualEntryTarget!!, calories)
                 manualEntryTarget = null
+            },
+        )
+    }
+
+    if (deleteEntryTarget != null) {
+        AlertDialog(
+            onDismissRequest = { deleteEntryTarget = null },
+            title = { Text("Delete meal entry?") },
+            text = { Text("This will remove this meal from your history and calorie totals.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteEntry(deleteEntryTarget!!)
+                        deleteEntryTarget = null
+                    },
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { deleteEntryTarget = null }) {
+                    Text("Cancel")
+                }
             },
         )
     }
@@ -132,6 +159,7 @@ fun TodaySummaryScreen(
     onOpenMealDebug: (Long) -> Unit,
     onOpenManualEntry: (FoodEntry) -> Unit,
     onRetryEntry: (FoodEntry) -> Unit,
+    onDeleteEntry: (FoodEntry) -> Unit,
 ) {
     val groupedHistory = remember(state.historyItems) {
         state.historyItems.groupBy { it.date }
@@ -186,6 +214,7 @@ fun TodaySummaryScreen(
                             entry = entry,
                             onOpenManualEntry = { onOpenManualEntry(entry) },
                             onRetryEntry = { onRetryEntry(entry) },
+                            onDeleteEntry = { onDeleteEntry(entry) },
                         )
                     }
                 }
@@ -212,6 +241,7 @@ fun TodaySummaryScreen(
                                     entry = historyItem.entry,
                                     onClick = { onOpenMealDebug(historyItem.entry.id) },
                                     onRetryEntry = { onRetryEntry(historyItem.entry) },
+                                    onDeleteEntry = { onDeleteEntry(historyItem.entry) },
                                 )
                                 is TodayHistoryItem.CoachSession -> CoachHistoryCard(
                                     session = historyItem.session,
@@ -307,13 +337,17 @@ private fun HistoryEntryCard(
     entry: FoodEntry,
     onClick: () -> Unit,
     onRetryEntry: () -> Unit,
+    onDeleteEntry: () -> Unit,
 ) {
     val bitmap = remember(entry.imagePath) {
         entry.imagePath.takeIf { it.isNotBlank() && File(it).exists() }?.let(BitmapFactory::decodeFile)
     }
     val formatter = remember { DateTimeFormatter.ofPattern("MMM d") }
     Card(
-        onClick = onClick,
+        modifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onDeleteEntry,
+        ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
     ) {
@@ -415,11 +449,16 @@ private fun ManualEntryCard(
     entry: FoodEntry,
     onOpenManualEntry: () -> Unit,
     onRetryEntry: () -> Unit,
+    onDeleteEntry: () -> Unit,
 ) {
     val bitmap = remember(entry.imagePath) {
         entry.imagePath.takeIf { File(it).exists() }?.let(BitmapFactory::decodeFile)
     }
     Card(
+        modifier = Modifier.combinedClickable(
+            onClick = onOpenManualEntry,
+            onLongClick = onDeleteEntry,
+        ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
     ) {
