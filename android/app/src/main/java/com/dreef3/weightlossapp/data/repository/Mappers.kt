@@ -3,6 +3,11 @@ package com.dreef3.weightlossapp.data.repository
 import com.dreef3.weightlossapp.data.local.entity.DailyCalorieBudgetPeriodEntity
 import com.dreef3.weightlossapp.data.local.entity.FoodEntryEntity
 import com.dreef3.weightlossapp.data.local.entity.ProfileEntity
+import com.dreef3.weightlossapp.data.local.entity.CoachChatMessageEntity
+import com.dreef3.weightlossapp.data.local.entity.CoachChatSessionEntity
+import com.dreef3.weightlossapp.chat.ChatRole
+import com.dreef3.weightlossapp.chat.CoachChatSession
+import com.dreef3.weightlossapp.chat.DietChatMessage
 import com.dreef3.weightlossapp.domain.model.ActivityLevel
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
@@ -89,4 +94,27 @@ internal fun FoodEntry.toEntity(): FoodEntryEntity = FoodEntryEntity(
     source = source.name,
     entryStatus = entryStatus.name,
     deletedAtEpochMs = deletedAt?.toEpochMilli(),
+)
+
+internal fun CoachChatSessionEntity.toDomain(): CoachChatSession = CoachChatSession(
+    id = id,
+    sessionDateIso = sessionDateIso,
+    summary = summary,
+    createdAtEpochMs = createdAtEpochMs,
+    updatedAtEpochMs = updatedAtEpochMs,
+)
+
+internal fun CoachChatSession.toEntity(): CoachChatSessionEntity = CoachChatSessionEntity(
+    id = id,
+    sessionDateIso = sessionDateIso,
+    summary = summary,
+    createdAtEpochMs = createdAtEpochMs,
+    updatedAtEpochMs = updatedAtEpochMs,
+)
+
+internal fun CoachChatMessageEntity.toDomain(): DietChatMessage = DietChatMessage(
+    id = id,
+    role = ChatRole.valueOf(role),
+    text = text,
+    createdAtEpochMs = createdAtEpochMs,
 )

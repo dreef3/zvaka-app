@@ -1,8 +1,10 @@
 package com.dreef3.weightlossapp.chat
 
 data class DietChatMessage(
+    val id: Long = 0,
     val role: ChatRole,
     val text: String,
+    val createdAtEpochMs: Long = 0,
 )
 
 enum class ChatRole {
@@ -25,6 +27,14 @@ data class DietEntryContext(
     val estimatedCalories: Int,
     val needsManual: Boolean,
     val source: String,
+)
+
+data class CoachChatSession(
+    val id: Long = 0,
+    val sessionDateIso: String,
+    val summary: String?,
+    val createdAtEpochMs: Long,
+    val updatedAtEpochMs: Long,
 )
 
 interface DietChatEngine {

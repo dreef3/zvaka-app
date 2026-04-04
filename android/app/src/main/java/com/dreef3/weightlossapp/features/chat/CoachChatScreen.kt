@@ -1,6 +1,8 @@
 package com.dreef3.weightlossapp.features.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -44,8 +47,16 @@ import kotlinx.coroutines.delay
 @Composable
 fun CoachChatScreenRoute(
     container: AppContainer,
+    sessionId: Long? = null,
+    readOnly: Boolean = false,
 ) {
-    val viewModel: CoachChatViewModel = viewModel(factory = CoachChatViewModelFactory(container))
+    val viewModel: CoachChatViewModel = viewModel(
+        factory = CoachChatViewModelFactory(
+            container = container,
+            sessionId = sessionId,
+            readOnly = readOnly,
+        ),
+    )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     CoachChatScreen(
         state = state,
@@ -92,9 +103,9 @@ fun CoachChatScreen(
             }
         }
         if (state.showOverviewSuggestion) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SuggestionBubble(
                     text = "Give me overview for today",
@@ -115,13 +126,18 @@ fun CoachChatScreen(
                 onValueChange = onInputChanged,
                 modifier = Modifier.weight(1f),
                 label = { Text("Ask about your diet") },
-                enabled = !state.isSending,
+                enabled = !state.isSending && !state.readOnly,
+                readOnly = state.readOnly,
             )
             Button(
                 onClick = onSend,
-                enabled = !state.isSending && state.input.isNotBlank(),
+                enabled = !state.readOnly && !state.isSending && state.input.isNotBlank(),
             ) {
-                Text(if (state.isSending) "..." else "Send")
+                Text(
+                    if (state.readOnly) "History"
+                    else if (state.isSending) "..."
+                    else "Send",
+                )
             }
         }
     }
@@ -139,10 +155,12 @@ private fun SuggestionBubble(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun ChatBubble(
     role: ChatRole,
     text: String,
 ) {
+    val clipboardManager = LocalClipboardManager.current
     val isUser = role == ChatRole.User
     val background = if (isUser) {
         MaterialTheme.colorScheme.primaryContainer
@@ -154,6 +172,12 @@ private fun ChatBubble(
         horizontalAlignment = if (isUser) androidx.compose.ui.Alignment.End else androidx.compose.ui.Alignment.Start,
     ) {
         Card(
+            modifier = Modifier.combinedClickable(
+                onClick = {},
+                onLongClick = {
+                    clipboardManager.setText(AnnotatedString(text))
+                },
+            ),
             colors = CardDefaults.cardColors(containerColor = background),
             shape = RoundedCornerShape(24.dp),
         ) {

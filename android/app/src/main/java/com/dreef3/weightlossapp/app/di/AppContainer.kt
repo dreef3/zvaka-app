@@ -11,11 +11,13 @@ import com.dreef3.weightlossapp.app.media.PhotoStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.data.local.AppDatabase
 import com.dreef3.weightlossapp.data.preferences.AppPreferences
+import com.dreef3.weightlossapp.data.repository.CoachChatRepositoryImpl
 import com.dreef3.weightlossapp.data.repository.FoodEntryRepositoryImpl
 import com.dreef3.weightlossapp.data.repository.ProfileRepositoryImpl
 import com.dreef3.weightlossapp.domain.calculation.CalorieBudgetCalculator
 import com.dreef3.weightlossapp.domain.calculation.SummaryAggregator
 import com.dreef3.weightlossapp.domain.calculation.TrendAggregator
+import com.dreef3.weightlossapp.domain.repository.CoachChatRepository
 import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import com.dreef3.weightlossapp.domain.repository.ProfileRepository
 import com.dreef3.weightlossapp.domain.usecase.BackgroundPhotoCaptureUseCase
@@ -47,6 +49,11 @@ class AppContainer private constructor(context: Context) {
 
     val foodEntryRepository: FoodEntryRepository = FoodEntryRepositoryImpl(
         foodEntryDao = database.foodEntryDao(),
+    )
+
+    val coachChatRepository: CoachChatRepository = CoachChatRepositoryImpl(
+        sessionDao = database.coachChatSessionDao(),
+        messageDao = database.coachChatMessageDao(),
     )
 
     val saveUserProfileUseCase = SaveUserProfileUseCase(

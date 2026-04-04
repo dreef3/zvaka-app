@@ -18,10 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.features.chat.CoachChatScreenRoute
 import com.dreef3.weightlossapp.features.capture.FoodCaptureScreenRoute
@@ -132,11 +134,25 @@ fun AppNavHost(
             composable(AppDestinations.Trends) {
                 TrendsScreenRoute(
                     container = AppContainer.instance,
+                    onOpenHistoricalChat = { sessionId ->
+                        navController.navigate(AppDestinations.historicalChat(sessionId))
+                    },
                 )
             }
             composable(AppDestinations.Chat) {
                 CoachChatScreenRoute(
                     container = AppContainer.instance,
+                )
+            }
+            composable(
+                route = "${AppDestinations.ChatHistory}/{sessionId}",
+                arguments = listOf(navArgument("sessionId") { type = NavType.LongType }),
+            ) { backStack ->
+                val sessionId = backStack.arguments?.getLong("sessionId") ?: return@composable
+                CoachChatScreenRoute(
+                    container = AppContainer.instance,
+                    sessionId = sessionId,
+                    readOnly = true,
                 )
             }
             composable(AppDestinations.Profile) {

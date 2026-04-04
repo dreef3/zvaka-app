@@ -2,6 +2,7 @@ package com.dreef3.weightlossapp.features.trends
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.chat.CoachChatSession
 import com.dreef3.weightlossapp.domain.model.FoodEntry
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import com.dreef3.weightlossapp.domain.model.TrendWindow
@@ -42,6 +44,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun TrendsScreenRoute(
     container: AppContainer,
+    onOpenHistoricalChat: (Long) -> Unit,
 ) {
     val viewModel: TrendsViewModel = viewModel(factory = TrendsViewModelFactory(container))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -49,6 +52,7 @@ fun TrendsScreenRoute(
     TrendsScreen(
         state = state,
         onSelectWindow = viewModel::selectWindow,
+        onOpenHistoricalChat = onOpenHistoricalChat,
     )
 }
 
@@ -56,9 +60,10 @@ fun TrendsScreenRoute(
 fun TrendsScreen(
     state: TrendsUiState,
     onSelectWindow: (TrendWindowType) -> Unit,
+    onOpenHistoricalChat: (Long) -> Unit,
 ) {
-    val groupedEntries = remember(state.historyEntries) {
-        state.historyEntries.groupBy { it.entryDate }
+    val groupedEntries = remember(state.historyItems) {
+        state.historyItems.groupBy { it.date }
             .toSortedMap(compareByDescending { it })
             .entries
             .toList()
@@ -86,10 +91,10 @@ fun TrendsScreen(
         state.window?.let { window ->
             item { TrendOverviewCard(window = window) }
         }
-        if (state.historyEntries.isNotEmpty()) {
+        if (state.historyItems.isNotEmpty()) {
             item {
                 Text(
-                    text = "Meals and photos",
+                    text = "Meals, photos, and coach chats",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -102,8 +107,22 @@ fun TrendsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                items(entries, key = { it.id }) { entry ->
-                    HistoryEntryCard(entry = entry)
+                items(
+                    entries,
+                    key = {
+                        when (it) {
+                            is TrendsHistoryItem.Meal -> "meal-${it.entry.id}"
+                            is TrendsHistoryItem.CoachSession -> "chat-${it.session.id}"
+                        }
+                    },
+                ) { entry ->
+                    when (entry) {
+                        is TrendsHistoryItem.Meal -> HistoryEntryCard(entry = entry.entry)
+                        is TrendsHistoryItem.CoachSession -> CoachHistoryCard(
+                            session = entry.session,
+                            onClick = { onOpenHistoricalChat(entry.session.id) },
+                        )
+                    }
                 }
             }
         } else {
@@ -112,6 +131,55 @@ fun TrendsScreen(
                     text = "No meals in this period yet.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CoachHistoryCard(
+    session: CoachChatSession,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Card(
+                modifier = Modifier.size(72.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "Coach",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSecondary,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "Coach conversation",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    text = session.summary ?: "Open to read this conversation.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
         }

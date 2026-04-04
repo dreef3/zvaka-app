@@ -1,7 +1,11 @@
 package com.dreef3.weightlossapp.features.trends
 
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
+import com.dreef3.weightlossapp.chat.ChatRole
+import com.dreef3.weightlossapp.chat.CoachChatSession
+import com.dreef3.weightlossapp.chat.DietChatMessage
 import com.dreef3.weightlossapp.domain.calculation.TrendAggregator
+import com.dreef3.weightlossapp.domain.repository.CoachChatRepository
 import com.dreef3.weightlossapp.domain.model.ActivityLevel
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
@@ -68,6 +72,7 @@ class TrendsViewModelTest {
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             profileRepository = TrendsFakeProfileRepository(periods),
             foodEntryRepository = TrendsFakeFoodEntryRepository(entries),
+            coachChatRepository = TrendsFakeCoachChatRepository(),
             trendAggregator = TrendAggregator(),
         )
 
@@ -97,6 +102,18 @@ class TrendsViewModelTest {
         source = FoodEntrySource.AiEstimate,
         entryStatus = FoodEntryStatus.Ready,
     )
+}
+
+private class TrendsFakeCoachChatRepository : CoachChatRepository {
+    override fun observeSessionForDate(date: LocalDate): Flow<CoachChatSession?> = MutableStateFlow(null)
+    override fun observeMessages(sessionId: Long): Flow<List<DietChatMessage>> = MutableStateFlow(emptyList())
+    override fun observeSessionsInRange(startDate: LocalDate, endDate: LocalDate): Flow<List<CoachChatSession>> =
+        MutableStateFlow(emptyList())
+    override suspend fun getSession(sessionId: Long): CoachChatSession? = null
+    override suspend fun getMessages(sessionId: Long): List<DietChatMessage> = emptyList()
+    override suspend fun ensureSessionForDate(date: LocalDate): Long = 1L
+    override suspend fun appendMessage(sessionId: Long, role: ChatRole, text: String, createdAtEpochMs: Long): Long = 1L
+    override suspend fun updateSessionSummary(sessionId: Long, summary: String) = Unit
 }
 
 private class TrendsFakeFoodEntryRepository(

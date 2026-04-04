@@ -1,6 +1,7 @@
 package com.dreef3.weightlossapp.chat
 
 import android.util.Log
+import com.dreef3.weightlossapp.BuildConfig
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
@@ -38,6 +39,10 @@ class LiteRtDietChatEngine(
         snapshot: DietChatSnapshot,
     ): Result<String> = withContext(Dispatchers.Default) {
         runCatching {
+            debugLog(
+                "sendMessage start message=${message.take(160)} historyCount=${history.size} " +
+                    "entryCount=${snapshot.entries.size} budget=${snapshot.todayBudgetCalories}",
+            )
             if (!modelFile.exists() || modelFile.length() == 0L) {
                 throw IllegalStateException("Model unavailable")
             }
@@ -50,17 +55,22 @@ class LiteRtDietChatEngine(
                     ),
                 ),
             )
+            debugLog("tools registered count=${tools.size}")
             val prompt = buildPrompt(history, message, snapshot)
+            debugLog("prompt built chars=${prompt.length}")
             activeEngine.createConversationWithTools(tools).use { conversation ->
                 conversation.awaitTextResponse(prompt).trim().ifBlank {
                     "I couldn't produce a useful answer yet. Please try again."
                 }
             }
+        }.onFailure { throwable ->
+            Log.e(TAG, "sendMessage failed", throwable)
         }
     }
 
     private suspend fun getOrCreateEngine(): Engine = engineMutex.withLock {
         engine?.let { return it }
+        debugLog("initializing engine modelPath=${modelFile.absolutePath} size=${modelFile.length()}")
         val engineConfig = EngineConfig(
             modelPath = modelFile.absolutePath,
             backend = Backend.GPU(),
@@ -72,6 +82,7 @@ class LiteRtDietChatEngine(
         return Engine(engineConfig).also { created ->
             created.initialize()
             engine = created
+            debugLog("engine initialized")
         }
     }
 
@@ -121,21 +132,23 @@ class LiteRtDietChatEngine(
                 Contents.of(listOf(Content.Text(prompt))),
                 object : MessageCallback {
                     override fun onMessage(message: Message) {
+                        debugLog("onMessage chunkLength=${message.toString().length}")
                         builder.append(message.toString())
                     }
 
                     override fun onDone() {
+                        debugLog("onDone totalLength=${builder.length}")
                         if (continuation.isActive) {
                             continuation.resume(builder.toString())
                         }
                     }
 
                     override fun onError(throwable: Throwable) {
+                        Log.e(TAG, "conversation onError", throwable)
                         if (!continuation.isActive) return
                         if (throwable is CancellationException) {
                             continuation.cancel(throwable)
                         } else {
-                            Log.e(TAG, "Diet chat failed", throwable)
                             continuation.resumeWithException(throwable)
                         }
                     }
@@ -186,5 +199,11 @@ class LiteRtDietChatEngine(
 
     companion object {
         private const val TAG = "LiteRtDietChat"
+    }
+
+    private fun debugLog(message: String) {
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, message)
+        }
     }
 }

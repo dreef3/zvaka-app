@@ -1,8 +1,10 @@
 package com.dreef3.weightlossapp.features.chat
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.dreef3.weightlossapp.BuildConfig
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.chat.ChatRole
 import com.dreef3.weightlossapp.chat.DietChatMessage
@@ -11,27 +13,40 @@ import com.dreef3.weightlossapp.chat.DietEntryContext
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+private data class ParsedCorrection(
+    val lookupQuery: String?,
+    val correctedDescription: String?,
+    val correctedCalories: Int?,
+    val reason: String,
+)
+
 data class CoachChatUiState(
-    val messages: List<DietChatMessage> = listOf(
-        DietChatMessage(
-            role = ChatRole.Assistant,
-            text = "Ask about your meals, calories, or how to improve today's diet.",
-        ),
-    ),
+    val messages: List<DietChatMessage> = emptyList(),
     val input: String = "",
     val isSending: Boolean = false,
     val showOverviewSuggestion: Boolean = true,
+    val readOnly: Boolean = false,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class CoachChatViewModel(
     private val container: AppContainer,
+    sessionId: Long? = null,
+    private val readOnly: Boolean = false,
 ) : ViewModel() {
+    private val today = container.localDateProvider.today()
+    private val currentSessionId = MutableStateFlow<Long?>(sessionId)
+
     private val snapshotState: StateFlow<DietChatSnapshot> = combine(
         container.profileRepository.observeBudgetPeriods(),
         container.foodEntryRepository.observeAllEntries(),
@@ -77,22 +92,61 @@ class CoachChatViewModel(
         ),
     )
 
-    private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(CoachChatUiState())
+    private val persistedMessages: StateFlow<List<DietChatMessage>> = currentSessionId
+        .flatMapLatest { activeSessionId ->
+            if (activeSessionId == null) flowOf(emptyList())
+            else container.coachChatRepository.observeMessages(activeSessionId)
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(CoachChatUiState(readOnly = readOnly))
     val uiState: StateFlow<CoachChatUiState> = _uiState
 
+    init {
+        if (sessionId == null) {
+            viewModelScope.launch {
+                container.coachChatRepository.observeSessionForDate(today).collect { session ->
+                    currentSessionId.value = session?.id
+                }
+            }
+        }
+        viewModelScope.launch {
+            persistedMessages.collect { messages ->
+                _uiState.value = _uiState.value.copy(
+                    messages = if (messages.isEmpty()) defaultMessages() else messages,
+                    showOverviewSuggestion = !readOnly && messages.isEmpty() && !_uiState.value.isSending,
+                )
+            }
+        }
+    }
+
     fun updateInput(value: String) {
+        if (readOnly) return
         _uiState.value = _uiState.value.copy(input = value)
     }
 
     fun insertCorrectionExample() {
+        if (readOnly) return
+        debugLog("insertCorrectionExample")
         _uiState.value = _uiState.value.copy(
             input = "That pastry entry was actually potato burek, around 420 kcal.",
         )
     }
 
     fun send() {
+        if (readOnly) return
         val text = _uiState.value.input.trim()
         if (text.isBlank() || _uiState.value.isSending) return
+        val directCorrection = parseCorrection(text)
+        if (directCorrection != null) {
+            debugLog(
+                "send detected direct correction query=${directCorrection.lookupQuery} " +
+                    "description=${directCorrection.correctedDescription} calories=${directCorrection.correctedCalories}",
+            )
+            applyDirectCorrection(text, directCorrection)
+            return
+        }
+        debugLog("send normal message=${text.take(160)}")
         sendMessage(
             userVisibleText = text,
             actualPrompt = text,
@@ -101,10 +155,12 @@ class CoachChatViewModel(
     }
 
     fun requestOverview() {
+        if (readOnly) return
         if (_uiState.value.isSending) return
         val snapshot = snapshotState.value
         val todayIso = container.localDateProvider.today().toString()
         val hasTodayEntries = snapshot.entries.any { it.dateIso == todayIso }
+        debugLog("requestOverview hasTodayEntries=$hasTodayEntries entryCount=${snapshot.entries.size}")
         val actualPrompt = if (hasTodayEntries) {
             "Analyze today's tracked meals for weight loss and healthy eating habits. Start with a short overview of what was eaten, then give concise practical advice focused on calories, protein, satiety, meal balance, and one or two concrete next steps."
         } else {
@@ -122,37 +178,220 @@ class CoachChatViewModel(
         actualPrompt: String,
         clearInput: Boolean,
     ) {
-        val userMessage = DietChatMessage(role = ChatRole.User, text = userVisibleText)
-        val history = _uiState.value.messages + userMessage
         _uiState.value = _uiState.value.copy(
-            messages = history,
             input = if (clearInput) "" else _uiState.value.input,
             isSending = true,
             showOverviewSuggestion = false,
         )
 
         viewModelScope.launch(Dispatchers.IO) {
+            val sessionId = ensureWritableSessionId()
+            val userMessageTime = System.currentTimeMillis()
+            container.coachChatRepository.appendMessage(sessionId, ChatRole.User, userVisibleText, userMessageTime)
+            val history = container.coachChatRepository.getMessages(sessionId)
             val response = container.dietChatEngine.sendMessage(
                 message = actualPrompt,
                 history = history,
                 snapshot = snapshotState.value,
             ).getOrElse {
+                Log.e(TAG, "dietChatEngine returned failure", it)
                 "I couldn't answer that yet. Try again in a moment."
             }
+            val assistantTime = System.currentTimeMillis()
+            container.coachChatRepository.appendMessage(sessionId, ChatRole.Assistant, response, assistantTime)
+            container.coachChatRepository.updateSessionSummary(sessionId, summarizeConversation(response, history.lastOrNull()?.text))
+            debugLog("assistant response chars=${response.length}")
             _uiState.value = _uiState.value.copy(
-                messages = _uiState.value.messages + DietChatMessage(ChatRole.Assistant, response),
                 isSending = false,
                 showOverviewSuggestion = false,
             )
         }
     }
+
+    private fun applyDirectCorrection(
+        userText: String,
+        correction: ParsedCorrection,
+    ) {
+        _uiState.value = _uiState.value.copy(
+            input = "",
+            isSending = true,
+            showOverviewSuggestion = false,
+        )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val sessionId = ensureWritableSessionId()
+            container.coachChatRepository.appendMessage(
+                sessionId = sessionId,
+                role = ChatRole.User,
+                text = userText,
+                createdAtEpochMs = System.currentTimeMillis(),
+            )
+            val snapshot = snapshotState.value
+            val candidates = resolveCorrectionCandidates(snapshot, correction.lookupQuery)
+            debugLog("applyDirectCorrection candidates=${candidates.map { it.entryId to it.description }}")
+            val reply = when {
+                candidates.isEmpty() ->
+                    "I couldn't find which saved meal to correct. Mention the meal name a bit more specifically."
+                candidates.size > 1 ->
+                    "I found more than one possible meal to correct. Mention the meal more specifically so I can update the right one."
+                correction.correctedCalories == null && correction.correctedDescription.isNullOrBlank() ->
+                    "Tell me the corrected calories, the corrected meal name, or both."
+                else -> {
+                    val target = candidates.single()
+                    val result = container.dietEntryCorrectionService.applyCorrection(
+                        com.dreef3.weightlossapp.chat.DietEntryCorrectionRequest(
+                            entryId = target.entryId,
+                            correctedCalories = correction.correctedCalories,
+                            correctedDescription = correction.correctedDescription,
+                            reason = correction.reason,
+                        ),
+                    )
+                    debugLog("applyDirectCorrection result=$result")
+                    if (result["success"] == true) {
+                        val description = result["description"]?.toString().orEmpty()
+                        val calories = result["finalCalories"]?.toString().orEmpty()
+                        "Updated that entry to $description at $calories kcal."
+                    } else {
+                        result["message"]?.toString() ?: "I couldn't update that meal entry."
+                    }
+                }
+            }
+            container.coachChatRepository.appendMessage(
+                sessionId = sessionId,
+                role = ChatRole.Assistant,
+                text = reply,
+                createdAtEpochMs = System.currentTimeMillis(),
+            )
+            container.coachChatRepository.updateSessionSummary(sessionId, summarizeConversation(reply, userText))
+            _uiState.value = _uiState.value.copy(
+                isSending = false,
+                showOverviewSuggestion = false,
+            )
+        }
+    }
+
+    private fun resolveCorrectionCandidates(
+        snapshot: DietChatSnapshot,
+        lookupQuery: String?,
+    ): List<DietEntryContext> {
+        val entries = snapshot.entries
+        if (entries.isEmpty()) return emptyList()
+        val normalizedQuery = lookupQuery?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+        if (normalizedQuery == null) {
+            return entries.take(1)
+        }
+        val directMatches = entries.filter { entry ->
+            (entry.description ?: "").lowercase().contains(normalizedQuery)
+        }
+        return if (directMatches.isNotEmpty()) directMatches else entries.filter { entry ->
+            normalizedQuery.split(" ").all { token ->
+                token.isBlank() || (entry.description ?: "").lowercase().contains(token)
+            }
+        }
+    }
+
+    private fun parseCorrection(text: String): ParsedCorrection? {
+        val calories = Regex("""(?i)\b(?:around|about)?\s*(\d{2,5})\s*k?cal\b""")
+            .find(text)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
+
+        val entryActuallyPattern = Regex(
+            pattern = """(?i)^(?:that|the)?\s*(.+?)\s+entry\s+was\s+(?:actually|in fact)\s+(.+?)(?:[,.]|$)""",
+        )
+        val simpleActuallyPattern = Regex(
+            pattern = """(?i)^(?:that|the)?\s*(.+?)\s+was\s+(?:actually|in fact)\s+(.+?)(?:[,.]|$)""",
+        )
+
+        entryActuallyPattern.find(text)?.let { match ->
+            return ParsedCorrection(
+                lookupQuery = match.groupValues[1].trim(),
+                correctedDescription = cleanDescription(match.groupValues[2]),
+                correctedCalories = calories,
+                reason = text,
+            )
+        }
+        simpleActuallyPattern.find(text)?.let { match ->
+            return ParsedCorrection(
+                lookupQuery = match.groupValues[1].trim(),
+                correctedDescription = cleanDescription(match.groupValues[2]),
+                correctedCalories = calories,
+                reason = text,
+            )
+        }
+
+        if (calories != null) {
+            val namedEntryPattern = Regex("""(?i)^(?:that|the)?\s*(.+?)\s+(?:was|is|should be|should've been).*$""")
+            namedEntryPattern.find(text)?.let { match ->
+                val query = match.groupValues[1]
+                    .replace(Regex("""\bentry\b""", RegexOption.IGNORE_CASE), "")
+                    .trim()
+                return ParsedCorrection(
+                    lookupQuery = query.takeIf { it.isNotBlank() },
+                    correctedDescription = null,
+                    correctedCalories = calories,
+                    reason = text,
+                )
+            }
+        }
+
+        return null
+    }
+
+    private fun cleanDescription(raw: String): String? {
+        val stripped = raw
+            .replace(Regex("""(?i),?\s*(around|about)\s*\d{2,5}\s*k?cal.*$"""), "")
+            .replace(Regex("""(?i),?\s*\d{2,5}\s*k?cal.*$"""), "")
+            .trim()
+            .trimEnd('.', ',')
+        return stripped.ifBlank { null }
+    }
+
+    private fun debugLog(message: String) {
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, message)
+        }
+    }
+
+    private suspend fun ensureWritableSessionId(): Long {
+        currentSessionId.value?.let { return it }
+        val created = container.coachChatRepository.ensureSessionForDate(today)
+        currentSessionId.value = created
+        return created
+    }
+
+    private fun summarizeConversation(assistantText: String, userText: String?): String {
+        val assistantLine = assistantText.lineSequence().firstOrNull { it.isNotBlank() }?.trim()
+        val userLine = userText?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
+        return assistantLine?.take(120)
+            ?: userLine?.take(120)
+            ?: "Coach conversation"
+    }
+
+    private fun defaultMessages(): List<DietChatMessage> = listOf(
+        DietChatMessage(
+            role = ChatRole.Assistant,
+            text = if (readOnly) {
+                "No saved messages in this coach conversation."
+            } else {
+                "Ask about your meals, calories, or how to improve today's diet."
+            },
+        ),
+    )
+
+    companion object {
+        private const val TAG = "CoachChat"
+    }
 }
 
 class CoachChatViewModelFactory(
     private val container: AppContainer,
+    private val sessionId: Long? = null,
+    private val readOnly: Boolean = false,
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         @Suppress("UNCHECKED_CAST")
-        return CoachChatViewModel(container) as T
+        return CoachChatViewModel(container, sessionId, readOnly) as T
     }
 }
