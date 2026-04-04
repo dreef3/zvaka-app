@@ -13,4 +13,5 @@ data class CaptureUiState(
     val isDownloadingModel: Boolean = false,
     val modelAvailable: Boolean = false,
     val modelStatusMessage: String? = null,
+    val modelDownloadProgressPercent: Int? = null,
 )

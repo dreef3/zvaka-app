@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -27,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -49,6 +51,8 @@ fun CoachChatScreenRoute(
         state = state,
         onInputChanged = viewModel::updateInput,
         onSend = viewModel::send,
+        onRequestOverview = viewModel::requestOverview,
+        onSuggestCorrection = viewModel::insertCorrectionExample,
     )
 }
 
@@ -57,6 +61,8 @@ fun CoachChatScreen(
     state: CoachChatUiState,
     onInputChanged: (String) -> Unit,
     onSend: () -> Unit,
+    onRequestOverview: () -> Unit,
+    onSuggestCorrection: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -85,6 +91,21 @@ fun CoachChatScreen(
                 }
             }
         }
+        if (state.showOverviewSuggestion) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SuggestionBubble(
+                    text = "Give me overview for today",
+                    onClick = onRequestOverview,
+                )
+                SuggestionBubble(
+                    text = "Correct a meal entry",
+                    onClick = onSuggestCorrection,
+                )
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -104,6 +125,17 @@ fun CoachChatScreen(
             }
         }
     }
+}
+
+@Composable
+private fun SuggestionBubble(
+    text: String,
+    onClick: () -> Unit,
+) {
+    AssistChip(
+        onClick = onClick,
+        label = { Text(text) },
+    )
 }
 
 @Composable

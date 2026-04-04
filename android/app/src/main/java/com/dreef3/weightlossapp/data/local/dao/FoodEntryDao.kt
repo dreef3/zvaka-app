@@ -20,4 +20,7 @@ interface FoodEntryDao {
 
     @Query("SELECT * FROM food_entry ORDER BY capturedAtEpochMs DESC")
     fun observeAll(): Flow<List<FoodEntryEntity>>
+
+    @Query("SELECT * FROM food_entry WHERE id = :entryId LIMIT 1")
+    suspend fun getById(entryId: Long): FoodEntryEntity?
 }

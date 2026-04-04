@@ -39,6 +39,12 @@ class AppPreferences(
         }
     }
 
+    suspend fun reset() {
+        context.dataStore.edit { prefs ->
+            prefs.clear()
+        }
+    }
+
     private object Keys {
         val HasCompletedOnboarding = booleanPreferencesKey("has_completed_onboarding")
         val CoachAutoAdviceEnabled = booleanPreferencesKey("coach_auto_advice_enabled")

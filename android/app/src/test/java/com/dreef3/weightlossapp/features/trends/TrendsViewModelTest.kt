@@ -49,7 +49,7 @@ class TrendsViewModelTest {
 
     @Test
     fun switchesWindowAndMarksPartialHistory() = runTest(dispatcher) {
-        val today = LocalDate.parse("2026-04-03")
+        val today = LocalDate.now(ZoneId.of("UTC"))
         val periods = listOf(
             DailyCalorieBudgetPeriod(
                 profileId = 1,
@@ -109,6 +109,8 @@ private class TrendsFakeFoodEntryRepository(
     override fun observeEntriesInRange(startDate: LocalDate, endDate: LocalDate): Flow<List<FoodEntry>> = flow
 
     override fun observeAllEntries(): Flow<List<FoodEntry>> = flow
+
+    override suspend fun getEntry(entryId: Long): FoodEntry? = flow.value.firstOrNull { it.id == entryId }
 
     override suspend fun upsert(entry: FoodEntry): Long = entry.id
 }

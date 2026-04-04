@@ -9,6 +9,13 @@ class OnboardingViewModelFactory(
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         @Suppress("UNCHECKED_CAST")
-        return OnboardingViewModel(container) as T
+        return OnboardingViewModel(
+            profileRepository = container.profileRepository,
+            saveUserProfile = container.saveUserProfileUseCase::invoke,
+            preferences = container.preferences,
+            budgetCalculator = container.budgetCalculator,
+            modelDownloadController = container.modelDownloadRepository,
+            modelStorage = container.modelStorage,
+        ) as T
     }
 }

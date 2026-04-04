@@ -116,6 +116,8 @@ private class SummaryFakeFoodEntryRepository : FoodEntryRepository {
 
     override fun observeAllEntries(): Flow<List<FoodEntry>> = entries
 
+    override suspend fun getEntry(entryId: Long): FoodEntry? = entries.value.firstOrNull { it.id == entryId }
+
     override suspend fun upsert(entry: FoodEntry): Long = entry.id
 }
 

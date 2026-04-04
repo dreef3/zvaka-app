@@ -1,5 +1,6 @@
 package com.dreef3.weightlossapp.features.onboarding
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +12,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,27 +21,33 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.work.WorkManager
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.app.media.ModelDownloadConfig
 import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileRequest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 @Composable
 fun ProfileEditScreen(
     container: AppContainer,
     onBack: () -> Unit = {},
+    onResetToOnboarding: () -> Unit = {},
 ) {
     val profile by container.profileRepository.observeProfile().collectAsStateWithLifecycle(initialValue = null)
     val budgetPeriods by container.profileRepository.observeBudgetPeriods().collectAsStateWithLifecycle(initialValue = emptyList())
-    val coachAutoAdviceEnabled by container.preferences.coachAutoAdviceEnabled.collectAsStateWithLifecycle(initialValue = true)
     val scope = rememberCoroutineScope()
 
     var form by remember { mutableStateOf(OnboardingFormState()) }
     var hasLoaded by remember { mutableStateOf(false) }
     var errors by remember { mutableStateOf(emptyList<String>()) }
     var isSaving by remember { mutableStateOf(false) }
+    var isResetting by remember { mutableStateOf(false) }
     val currentBudget = budgetPeriods.maxByOrNull { it.effectiveFromDate }?.caloriesPerDay
 
     LaunchedEffect(profile) {
@@ -152,38 +159,31 @@ fun ProfileEditScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Coach can open with instant meal analysis before you type anything.",
+                    text = "Coach now offers a one-tap overview suggestion inside chat instead of opening with an automatic report.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                androidx.compose.foundation.layout.Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = "Instant coach advice",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text = "Generate advice automatically when the Coach tab opens.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = coachAutoAdviceEnabled,
-                        onCheckedChange = { enabled ->
-                            scope.launch {
-                                container.preferences.setCoachAutoAdviceEnabled(enabled)
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            isResetting = true
+                            withContext(Dispatchers.IO) {
+                                WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDownloadConfig.MODEL_DOWNLOAD_WORK_NAME)
+                                WorkManager.getInstance(container.appContext).cancelAllWork()
+                                container.database.clearAllTables()
+                                container.preferences.reset()
+                                container.modelStorage.clearAll()
+                                container.photoStorage.clearAll()
                             }
-                        },
-                    )
+                            isResetting = false
+                            onResetToOnboarding()
+                        }
+                    },
+                    enabled = !isResetting,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (isResetting) "Resetting..." else "Reset app and restart onboarding")
                 }
             }
         }

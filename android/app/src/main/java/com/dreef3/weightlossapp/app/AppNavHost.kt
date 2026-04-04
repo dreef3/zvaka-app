@@ -71,10 +71,10 @@ fun AppNavHost(
         return
     }
 
-    val startDestination = if (state.hasProfile) AppDestinations.Home else AppDestinations.Onboarding
+    val startDestination = if (state.isSetupComplete) AppDestinations.Home else AppDestinations.Onboarding
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
-    val showBottomBar = state.hasProfile && currentDestination?.route in BottomDestinations.map { it.route }
+    val showBottomBar = state.isSetupComplete && currentDestination?.route in BottomDestinations.map { it.route }
     fun navigateToTopLevel(route: String) {
         navController.navigate(route) {
             launchSingleTop = true
@@ -143,6 +143,14 @@ fun AppNavHost(
                 ProfileEditScreen(
                     container = AppContainer.instance,
                     onBack = { navController.popBackStack() },
+                    onResetToOnboarding = {
+                        navController.navigate(AppDestinations.Onboarding) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
         }

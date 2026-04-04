@@ -30,6 +30,12 @@ class ModelStorage(
         }
     }
 
+    fun clearAll() {
+        modelDirectory.listFiles()?.forEach { file ->
+            file.delete()
+        }
+    }
+
     fun logState(tag: String = "ModelStorage") {
         val directory = modelDirectory
         val model = defaultModelFile

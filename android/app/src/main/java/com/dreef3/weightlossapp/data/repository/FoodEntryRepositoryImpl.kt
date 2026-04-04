@@ -20,5 +20,7 @@ class FoodEntryRepositoryImpl(
     override fun observeAllEntries(): Flow<List<FoodEntry>> =
         foodEntryDao.observeAll().map { items -> items.map { it.toDomain() } }
 
+    override suspend fun getEntry(entryId: Long): FoodEntry? = foodEntryDao.getById(entryId)?.toDomain()
+
     override suspend fun upsert(entry: FoodEntry): Long = foodEntryDao.upsert(entry.toEntity())
 }

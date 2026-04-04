@@ -1,6 +1,7 @@
 package com.dreef3.weightlossapp.features.capture
 
-import com.dreef3.weightlossapp.app.media.ModelDownloader
+import com.dreef3.weightlossapp.app.media.ModelDownloadController
+import com.dreef3.weightlossapp.app.media.ModelDownloadState
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
@@ -16,6 +17,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -27,7 +29,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -58,7 +59,7 @@ class FoodCaptureViewModelTest {
                 ),
             ),
             modelStorage = realModelStorage(available = true),
-            modelDownloader = FakeModelDownloader(),
+            modelDownloadRepository = FakeModelDownloadRepository(),
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
@@ -86,7 +87,7 @@ class FoodCaptureViewModelTest {
                 ),
             ),
             modelStorage = realModelStorage(available = true),
-            modelDownloader = FakeModelDownloader(),
+            modelDownloadRepository = FakeModelDownloadRepository(),
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
@@ -107,7 +108,12 @@ class FoodCaptureViewModelTest {
     @Test
     fun downloadModelUpdatesAvailability() = runTest(dispatcher) {
         val modelStorage = realModelStorage(available = false)
-        val downloader = FakeModelDownloader(modelStorage)
+        val downloadRepository = FakeModelDownloadRepository(
+            state = ModelDownloadState(isDownloading = false, progressPercent = 100),
+            onEnqueue = {
+                modelStorage.defaultModelFile.writeText("model")
+            },
+        )
         val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
                 FoodEstimationResult(
@@ -118,18 +124,46 @@ class FoodCaptureViewModelTest {
                 ),
             ),
             modelStorage = modelStorage,
-            modelDownloader = downloader,
+            modelDownloadRepository = downloadRepository,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
             backgroundDispatcher = dispatcher,
         )
 
-        viewModel.downloadModelFromLocalServer()
+        viewModel.downloadModel()
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.modelAvailable)
         assertEquals("Model ready on device.", viewModel.uiState.value.modelStatusMessage)
+    }
+
+    @Test
+    fun downloadingStateIsReflectedInUi() = runTest(dispatcher) {
+        val viewModel = FoodCaptureViewModel(
+            foodEstimationEngine = FakeEngine(
+                FoodEstimationResult(
+                    estimatedCalories = 500,
+                    confidenceState = ConfidenceState.High,
+                    detectedFoodLabel = "spaghetti",
+                    confidenceNotes = null,
+                ),
+            ),
+            modelStorage = realModelStorage(available = false),
+            modelDownloadRepository = FakeModelDownloadRepository(
+                state = ModelDownloadState(isDownloading = true, progressPercent = 42),
+            ),
+            localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
+            confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
+            updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
+            backgroundDispatcher = dispatcher,
+        )
+
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isDownloadingModel)
+        assertEquals(42, viewModel.uiState.value.modelDownloadProgressPercent)
+        assertEquals("Downloading model from Hugging Face... 42%", viewModel.uiState.value.modelStatusMessage)
     }
 
     private fun realModelStorage(available: Boolean): ModelStorage {
@@ -160,6 +194,8 @@ private class FakeFoodEntryRepository : FoodEntryRepository {
 
     override fun observeAllEntries(): Flow<List<FoodEntry>> = MutableStateFlow(savedEntries.toList())
 
+    override suspend fun getEntry(entryId: Long): FoodEntry? = savedEntries.firstOrNull { it.id == entryId }
+
     override suspend fun upsert(entry: FoodEntry): Long {
         val id = if (entry.id == 0L) (savedEntries.size + 1).toLong() else entry.id
         savedEntries.removeAll { it.id == id }
@@ -168,12 +204,13 @@ private class FakeFoodEntryRepository : FoodEntryRepository {
     }
 }
 
-private class FakeModelDownloader(
-    private val targetStorage: ModelStorage = ModelStorage(modelDirectoryOverride = kotlin.io.path.createTempDirectory().toFile()),
-) : ModelDownloader(targetStorage) {
-    override suspend fun downloadFrom(url: String): Result<File> {
-        targetStorage.modelDirectory.mkdirs()
-        targetStorage.defaultModelFile.writeText("model")
-        return Result.success(targetStorage.defaultModelFile)
+private class FakeModelDownloadRepository(
+    private val state: ModelDownloadState = ModelDownloadState(),
+    private val onEnqueue: () -> Unit = {},
+) : ModelDownloadController {
+    override fun enqueueIfNeeded() {
+        onEnqueue()
     }
+
+    override fun observeState() = flowOf(state)
 }

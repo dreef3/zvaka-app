@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dreef3.weightlossapp.app.di.AppContainer
-import com.dreef3.weightlossapp.app.media.ModelDownloader
+import com.dreef3.weightlossapp.app.media.ModelDownloadController
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
@@ -19,18 +19,17 @@ import com.dreef3.weightlossapp.inference.FoodEstimationRequest
 import com.dreef3.weightlossapp.inference.FoodEstimationResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 
 class FoodCaptureViewModel(
     private val foodEstimationEngine: FoodEstimationEngine,
     private val modelStorage: ModelStorage,
-    private val modelDownloader: ModelDownloader,
+    private val modelDownloadRepository: ModelDownloadController,
     private val localDateProvider: LocalDateProvider,
     private val confirmFoodEstimateUseCase: ConfirmFoodEstimateUseCase,
     private val updateFoodEntryUseCase: UpdateFoodEntryUseCase,
@@ -39,7 +38,7 @@ class FoodCaptureViewModel(
     private val _uiState = MutableStateFlow(
         CaptureUiState(
             modelAvailable = modelStorage.hasUsableModel(),
-            modelStatusMessage = modelAvailabilityMessage(modelStorage.hasUsableModel()),
+            modelStatusMessage = if (modelStorage.hasUsableModel()) "Model ready on device." else "Model not installed yet.",
         ),
     )
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
@@ -50,52 +49,31 @@ class FoodCaptureViewModel(
     init {
         modelStorage.cleanupIncompleteModelFiles()
         if (!modelStorage.hasUsableModel()) {
-            downloadModelFromLocalServer()
+            modelDownloadRepository.enqueueIfNeeded()
+        }
+        viewModelScope.launch {
+            modelDownloadRepository.observeState().collect { state ->
+                val modelAvailable = modelStorage.hasUsableModel()
+                _uiState.update { current ->
+                    current.copy(
+                        isDownloadingModel = state.isDownloading,
+                        modelAvailable = modelAvailable,
+                        modelDownloadProgressPercent = state.progressPercent,
+                        modelStatusMessage = modelStatusMessage(
+                            modelAvailable = modelAvailable,
+                            isDownloading = state.isDownloading,
+                            progressPercent = state.progressPercent,
+                            errorMessage = state.errorMessage,
+                        ),
+                        errorMessage = if (current.errorMessage == null) state.errorMessage else current.errorMessage,
+                    )
+                }
+            }
         }
     }
 
-    fun downloadModelFromLocalServer() {
-        val current = _uiState.value
-        if (current.isDownloadingModel || modelStorage.hasUsableModel()) {
-            return
-        }
-        _uiState.value = current.copy(
-            isDownloadingModel = true,
-            modelStatusMessage = "Downloading model from 192.168.0.168...",
-            errorMessage = null,
-        )
-
-        viewModelScope.launch(backgroundDispatcher) {
-            var attempt = 0
-            while (isActive && !modelStorage.hasUsableModel()) {
-                attempt += 1
-                _uiState.value = _uiState.value.copy(
-                    isDownloadingModel = true,
-                    modelAvailable = false,
-                    modelStatusMessage = "Downloading model from 192.168.0.168... attempt $attempt",
-                    errorMessage = null,
-                )
-
-                val result = modelDownloader.downloadFrom(DEBUG_MODEL_URL)
-                if (result.isSuccess) {
-                    _uiState.value = _uiState.value.copy(
-                        isDownloadingModel = false,
-                        modelAvailable = true,
-                        modelStatusMessage = "Model ready on device.",
-                        errorMessage = null,
-                    )
-                    return@launch
-                }
-
-                _uiState.value = _uiState.value.copy(
-                    isDownloadingModel = true,
-                    modelAvailable = false,
-                    modelStatusMessage = "Model download failed. Retrying in ${MODEL_DOWNLOAD_RETRY_SECONDS}s...",
-                    errorMessage = result.exceptionOrNull()?.message,
-                )
-                delay(MODEL_DOWNLOAD_RETRY_DELAY_MS)
-            }
-        }
+    fun downloadModel() {
+        modelDownloadRepository.enqueueIfNeeded()
     }
 
     fun analyzePhoto(imagePath: String) {
@@ -106,7 +84,7 @@ class FoodCaptureViewModel(
             imagePath = imagePath,
             isLoading = true,
             modelAvailable = modelAvailable,
-            modelStatusMessage = modelAvailabilityMessage(modelAvailable),
+            modelStatusMessage = modelStatusMessage(modelAvailable, _uiState.value.isDownloadingModel, _uiState.value.modelDownloadProgressPercent, null),
         )
 
         viewModelScope.launch(backgroundDispatcher) {
@@ -135,7 +113,7 @@ class FoodCaptureViewModel(
                             confidenceNotes = estimation.confidenceNotes,
                             awaitingConfirmation = true,
                             modelAvailable = true,
-                            modelStatusMessage = modelAvailabilityMessage(true),
+                            modelStatusMessage = modelStatusMessage(true, false, 100, null),
                         )
                     }
                 },
@@ -151,7 +129,13 @@ class FoodCaptureViewModel(
                         imagePath = imagePath,
                         errorMessage = message,
                         modelAvailable = modelStorage.hasUsableModel(),
-                        modelStatusMessage = modelAvailabilityMessage(modelStorage.hasUsableModel()),
+                        modelStatusMessage = modelStatusMessage(
+                            modelAvailable = modelStorage.hasUsableModel(),
+                            isDownloading = _uiState.value.isDownloadingModel,
+                            progressPercent = _uiState.value.modelDownloadProgressPercent,
+                            errorMessage = null,
+                        ),
+                        modelDownloadProgressPercent = _uiState.value.modelDownloadProgressPercent,
                     )
                 },
             )
@@ -168,7 +152,13 @@ class FoodCaptureViewModel(
                 shouldRetake = true,
                 errorMessage = "Take another photo.",
                 modelAvailable = modelStorage.hasUsableModel(),
-                modelStatusMessage = modelAvailabilityMessage(modelStorage.hasUsableModel()),
+                modelStatusMessage = modelStatusMessage(
+                    modelAvailable = modelStorage.hasUsableModel(),
+                    isDownloading = _uiState.value.isDownloadingModel,
+                    progressPercent = _uiState.value.modelDownloadProgressPercent,
+                    errorMessage = null,
+                ),
+                modelDownloadProgressPercent = _uiState.value.modelDownloadProgressPercent,
             )
             return
         }
@@ -216,17 +206,22 @@ class FoodCaptureViewModel(
             confidenceNotes = estimation.confidenceNotes,
             savedEntryId = entryId,
             modelAvailable = true,
-            modelStatusMessage = modelAvailabilityMessage(true),
+            modelStatusMessage = modelStatusMessage(true, false, 100, null),
+            modelDownloadProgressPercent = 100,
         )
     }
 
-    private fun modelAvailabilityMessage(modelAvailable: Boolean): String =
-        if (modelAvailable) "Model ready on device." else "Model not installed yet."
-
-    companion object {
-        private const val DEBUG_MODEL_URL = "http://192.168.0.168:18080/gemma-4-E2B-it.litertlm"
-        private const val MODEL_DOWNLOAD_RETRY_DELAY_MS = 5_000L
-        private const val MODEL_DOWNLOAD_RETRY_SECONDS = 5
+    private fun modelStatusMessage(
+        modelAvailable: Boolean,
+        isDownloading: Boolean,
+        progressPercent: Int?,
+        errorMessage: String?,
+    ): String = when {
+        modelAvailable -> "Model ready on device."
+        isDownloading && progressPercent != null -> "Downloading model from Hugging Face... $progressPercent%"
+        isDownloading -> "Downloading model from Hugging Face..."
+        errorMessage != null -> "Model download failed."
+        else -> "Model not installed yet."
     }
 }
 
@@ -238,7 +233,7 @@ class FoodCaptureViewModelFactory(
         return FoodCaptureViewModel(
             foodEstimationEngine = container.foodEstimationEngine,
             modelStorage = container.modelStorage,
-            modelDownloader = container.modelDownloader,
+            modelDownloadRepository = container.modelDownloadRepository,
             localDateProvider = container.localDateProvider,
             confirmFoodEstimateUseCase = container.confirmFoodEstimateUseCase,
             updateFoodEntryUseCase = container.updateFoodEntryUseCase,

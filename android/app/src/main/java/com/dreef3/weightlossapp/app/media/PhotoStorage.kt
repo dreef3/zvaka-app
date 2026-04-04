@@ -7,12 +7,20 @@ import java.time.Instant
 class PhotoStorage(
     private val context: Context,
 ) {
+    private val photoDirectory: File
+        get() = File(context.filesDir, "photos").apply { mkdirs() }
+
     fun createPhotoFile(): File {
-        val directory = File(context.filesDir, "photos").apply { mkdirs() }
-        return File(directory, "meal-${Instant.now().toEpochMilli()}.jpg")
+        return File(photoDirectory, "meal-${Instant.now().toEpochMilli()}.jpg")
     }
 
     fun ensureDirectories() {
-        File(context.filesDir, "photos").mkdirs()
+        photoDirectory.mkdirs()
+    }
+
+    fun clearAll() {
+        photoDirectory.listFiles()?.forEach { file ->
+            file.delete()
+        }
     }
 }

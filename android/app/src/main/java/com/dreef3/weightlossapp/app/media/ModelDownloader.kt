@@ -11,7 +11,11 @@ import kotlinx.coroutines.withContext
 open class ModelDownloader(
     private val modelStorage: ModelStorage,
 ) {
-    open suspend fun downloadFrom(url: String): Result<File> = withContext(Dispatchers.IO) {
+    open suspend fun downloadFrom(
+        url: String = ModelDownloadConfig.MODEL_URL,
+        expectedTotalBytes: Long = ModelDownloadConfig.MODEL_TOTAL_BYTES,
+        onProgress: ((downloadedBytes: Long, totalBytes: Long) -> Unit)? = null,
+    ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
             val destination = modelStorage.defaultModelFile
             val tempFile = File(destination.absolutePath + ".part")
@@ -27,18 +31,48 @@ open class ModelDownloader(
                 readTimeout = 60_000
                 requestMethod = "GET"
                 doInput = true
-                connect()
             }
 
-            if (connection.responseCode !in 200..299) {
+            val resumedBytes = tempFile.takeIf { it.exists() }?.length() ?: 0L
+            if (resumedBytes > 0L) {
+                connection.setRequestProperty("Range", "bytes=$resumedBytes-")
+                connection.setRequestProperty("Accept-Encoding", "identity")
+            }
+            connection.connect()
+
+            if (connection.responseCode !in 200..299 && connection.responseCode != HttpURLConnection.HTTP_PARTIAL) {
                 throw IllegalStateException("HTTP ${connection.responseCode}")
             }
 
+            val totalBytes = when {
+                connection.getHeaderField("Content-Range") != null -> {
+                    connection.getHeaderField("Content-Range")
+                        ?.substringAfterLast("/")
+                        ?.toLongOrNull()
+                        ?: expectedTotalBytes
+                }
+                connection.contentLengthLong > 0L -> connection.contentLengthLong + resumedBytes
+                else -> expectedTotalBytes
+            }
+
+            var downloadedBytes = resumedBytes
+            var lastProgressTs = 0L
             connection.inputStream.use { input ->
-                FileOutputStream(tempFile, false).use { output ->
-                    input.copyTo(output, DEFAULT_BUFFER_SIZE)
+                FileOutputStream(tempFile, resumedBytes > 0L).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        downloadedBytes += bytesRead
+                        val now = System.currentTimeMillis()
+                        if (now - lastProgressTs >= 200) {
+                            onProgress?.invoke(downloadedBytes, totalBytes)
+                            lastProgressTs = now
+                        }
+                    }
                 }
             }
+            onProgress?.invoke(downloadedBytes, totalBytes)
 
             if (destination.exists()) {
                 destination.delete()

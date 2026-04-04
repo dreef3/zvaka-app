@@ -91,7 +91,7 @@ fun FoodCaptureScreenRoute(
                 permissionLauncher.launch(Manifest.permission.CAMERA)
             }
         },
-        onDownloadModel = viewModel::downloadModelFromLocalServer,
+        onDownloadModel = viewModel::downloadModel,
         onUseSamplePhoto = {
             val file = container.photoStorage.createPhotoFile()
             runCatching {
@@ -178,6 +178,12 @@ fun FoodCaptureScreen(
                     text = state.modelStatusMessage ?: "Model status unknown",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                if (state.isDownloadingModel && state.modelDownloadProgressPercent != null) {
+                    Text(
+                        text = "Progress: ${state.modelDownloadProgressPercent}%",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
 

@@ -27,6 +27,7 @@ import kotlin.coroutines.resumeWithException
 
 class LiteRtDietChatEngine(
     private val modelFile: File,
+    private val correctionService: DietEntryCorrectionService,
 ) : DietChatEngine {
     private val engineMutex = Mutex()
     private var engine: Engine? = null
@@ -43,7 +44,10 @@ class LiteRtDietChatEngine(
             val activeEngine = getOrCreateEngine()
             val tools = listOf(
                 tool(
-                    DietEntryTools { snapshot },
+                    DietEntryTools(
+                        snapshotProvider = { snapshot },
+                        correctionService = correctionService,
+                    ),
                 ),
             )
             val prompt = buildPrompt(history, message, snapshot)
@@ -92,6 +96,8 @@ class LiteRtDietChatEngine(
                                 realistic next steps over perfection.
                                 Use the available tools when advice depends on the user's logged meals
                                 or calorie history.
+                                When the user corrects a saved meal, use tools to find the entry and
+                                call correctEntry instead of merely suggesting the change.
                                 Base concrete claims about the user's diet on the trusted context and
                                 tool results, not guesses.
                                 Always be specific about today's meals first, then give 1-3 useful
@@ -171,7 +177,7 @@ class LiteRtDietChatEngine(
         } else {
             entries.take(12).forEach { entry ->
                 appendLine(
-                    "- ${entry.dateIso}: ${entry.description ?: "Unknown meal"}, " +
+                    "- id=${entry.entryId}, ${entry.dateIso}: ${entry.description ?: "Unknown meal"}, " +
                         "${entry.finalCalories} kcal, source=${entry.source}, needsManual=${entry.needsManual}",
                 )
             }

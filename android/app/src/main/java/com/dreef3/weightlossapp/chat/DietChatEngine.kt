@@ -18,6 +18,7 @@ data class DietChatSnapshot(
 )
 
 data class DietEntryContext(
+    val entryId: Long,
     val dateIso: String,
     val description: String?,
     val finalCalories: Int,

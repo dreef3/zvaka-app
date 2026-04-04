@@ -3,9 +3,11 @@ package com.dreef3.weightlossapp.chat
 import com.google.ai.edge.litertlm.Tool
 import com.google.ai.edge.litertlm.ToolParam
 import com.google.ai.edge.litertlm.ToolSet
+import kotlinx.coroutines.runBlocking
 
 class DietEntryTools(
     private val snapshotProvider: () -> DietChatSnapshot,
+    private val correctionService: DietEntryCorrectionService,
 ) : ToolSet {
 
     @Tool(description = "Get the user's current calorie summary for today.")
@@ -26,6 +28,7 @@ class DietEntryTools(
         return mapOf(
             "entries" to snapshot.entries.take(limit.coerceIn(1, 20)).map { entry ->
                 mapOf(
+                    "entryId" to entry.entryId,
                     "date" to entry.dateIso,
                     "description" to (entry.description ?: "Unknown meal"),
                     "calories" to entry.finalCalories,
@@ -51,6 +54,7 @@ class DietEntryTools(
         return mapOf(
             "entries" to matches.map { entry ->
                 mapOf(
+                    "entryId" to entry.entryId,
                     "date" to entry.dateIso,
                     "description" to (entry.description ?: "Unknown meal"),
                     "calories" to entry.finalCalories,
@@ -59,6 +63,25 @@ class DietEntryTools(
                     "source" to entry.source,
                 )
             },
+        )
+    }
+
+    @Tool(
+        description = "Correct a saved food entry when the user explicitly provides better calories, a better description, or both. Use only when the target entry is clear.",
+    )
+    fun correctEntry(
+        @ToolParam(description = "The exact entryId of the saved food entry to update.") entryId: Long,
+        @ToolParam(description = "Corrected calorie value as a whole number. Use -1 if calories are not being changed.") correctedCalories: Int,
+        @ToolParam(description = "Corrected short food description. Use empty string if description is not being changed.") correctedDescription: String,
+        @ToolParam(description = "Short reason based on the user's correction.") reason: String,
+    ): Map<String, Any?> = runBlocking {
+        correctionService.applyCorrection(
+            DietEntryCorrectionRequest(
+                entryId = entryId,
+                correctedCalories = correctedCalories.takeIf { it >= 0 },
+                correctedDescription = correctedDescription.takeIf { it.isNotBlank() },
+                reason = reason,
+            ),
         )
     }
 }

@@ -2,7 +2,9 @@ package com.dreef3.weightlossapp.app.di
 
 import android.content.Context
 import com.dreef3.weightlossapp.chat.DietChatEngine
+import com.dreef3.weightlossapp.chat.DietEntryCorrectionService
 import com.dreef3.weightlossapp.chat.LiteRtDietChatEngine
+import com.dreef3.weightlossapp.app.media.ModelDownloadRepository
 import com.dreef3.weightlossapp.app.media.ModelDownloader
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.media.PhotoStorage
@@ -25,12 +27,14 @@ import com.dreef3.weightlossapp.inference.FoodEstimationEngine
 import com.dreef3.weightlossapp.inference.LiteRtFoodEstimationEngine
 import com.dreef3.weightlossapp.work.WorkManagerPhotoProcessingScheduler
 class AppContainer private constructor(context: Context) {
-    private val database = AppDatabase.build(context)
+    val appContext: Context = context
+    val database = AppDatabase.build(context)
     val preferences = AppPreferences(context)
     val localDateProvider = LocalDateProvider()
     val photoStorage = PhotoStorage(context)
     val modelStorage = ModelStorage(context)
     val modelDownloader = ModelDownloader(modelStorage)
+    val modelDownloadRepository = ModelDownloadRepository(context, modelStorage)
     val photoProcessingScheduler = WorkManagerPhotoProcessingScheduler(context)
     val budgetCalculator = CalorieBudgetCalculator()
     val summaryAggregator = SummaryAggregator()
@@ -59,12 +63,17 @@ class AppContainer private constructor(context: Context) {
         localDateProvider = localDateProvider,
     )
     val saveManualCaloriesUseCase = SaveManualCaloriesUseCase(foodEntryRepository)
+    val dietEntryCorrectionService = DietEntryCorrectionService(
+        foodEntryRepository = foodEntryRepository,
+        updateFoodEntryUseCase = updateFoodEntryUseCase,
+    )
 
     val foodEstimationEngine: FoodEstimationEngine = LiteRtFoodEstimationEngine(
         modelFile = modelStorage.defaultModelFile,
     )
     val dietChatEngine: DietChatEngine = LiteRtDietChatEngine(
         modelFile = modelStorage.defaultModelFile,
+        correctionService = dietEntryCorrectionService,
     )
 
     companion object {

@@ -11,12 +11,9 @@ import com.dreef3.weightlossapp.chat.DietEntryContext
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -29,12 +26,12 @@ data class CoachChatUiState(
     ),
     val input: String = "",
     val isSending: Boolean = false,
+    val showOverviewSuggestion: Boolean = true,
 )
 
 class CoachChatViewModel(
     private val container: AppContainer,
 ) : ViewModel() {
-    private var initialAnalysisJob: Job? = null
     private val snapshotState: StateFlow<DietChatSnapshot> = combine(
         container.profileRepository.observeBudgetPeriods(),
         container.foodEntryRepository.observeAllEntries(),
@@ -59,6 +56,7 @@ class CoachChatViewModel(
                 .sortedByDescending { it.capturedAt }
                 .map { entry ->
                     DietEntryContext(
+                        entryId = entry.id,
                         dateIso = entry.entryDate.toString(),
                         description = entry.detectedFoodLabel,
                         finalCalories = entry.finalCalories,
@@ -82,41 +80,60 @@ class CoachChatViewModel(
     private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(CoachChatUiState())
     val uiState: StateFlow<CoachChatUiState> = _uiState
 
-    init {
-        initialAnalysisJob = viewModelScope.launch {
-            val autoAdviceEnabled = container.preferences.coachAutoAdviceEnabled.first()
-            if (!autoAdviceEnabled) return@launch
-            var attempts = 0
-            while (attempts < 10 && !hasMeaningfulSnapshot(snapshotState.value)) {
-                delay(200)
-                attempts += 1
-            }
-            val hasOnlyGreeting = _uiState.value.messages.size == 1
-            if (hasOnlyGreeting && !_uiState.value.isSending) {
-                runAutomaticOpeningAnalysis(snapshotState.value)
-            }
-        }
-    }
-
     fun updateInput(value: String) {
         _uiState.value = _uiState.value.copy(input = value)
+    }
+
+    fun insertCorrectionExample() {
+        _uiState.value = _uiState.value.copy(
+            input = "That pastry entry was actually potato burek, around 420 kcal.",
+        )
     }
 
     fun send() {
         val text = _uiState.value.input.trim()
         if (text.isBlank() || _uiState.value.isSending) return
+        sendMessage(
+            userVisibleText = text,
+            actualPrompt = text,
+            clearInput = true,
+        )
+    }
 
-        val userMessage = DietChatMessage(role = ChatRole.User, text = text)
+    fun requestOverview() {
+        if (_uiState.value.isSending) return
+        val snapshot = snapshotState.value
+        val todayIso = container.localDateProvider.today().toString()
+        val hasTodayEntries = snapshot.entries.any { it.dateIso == todayIso }
+        val actualPrompt = if (hasTodayEntries) {
+            "Analyze today's tracked meals for weight loss and healthy eating habits. Start with a short overview of what was eaten, then give concise practical advice focused on calories, protein, satiety, meal balance, and one or two concrete next steps."
+        } else {
+            "Today's meals are empty. Analyze yesterday's tracked meals instead, if available, for weight loss and healthy eating habits. Start with a short overview of what was eaten, then give concise practical advice focused on calories, protein, satiety, meal balance, and one or two concrete next steps. If yesterday is also empty, say briefly that there is not enough recent meal data yet."
+        }
+        sendMessage(
+            userVisibleText = "Give me overview for today",
+            actualPrompt = actualPrompt,
+            clearInput = false,
+        )
+    }
+
+    private fun sendMessage(
+        userVisibleText: String,
+        actualPrompt: String,
+        clearInput: Boolean,
+    ) {
+        val userMessage = DietChatMessage(role = ChatRole.User, text = userVisibleText)
         val history = _uiState.value.messages + userMessage
         _uiState.value = _uiState.value.copy(
             messages = history,
-            input = "",
+            input = if (clearInput) "" else _uiState.value.input,
             isSending = true,
+            showOverviewSuggestion = false,
         )
 
         viewModelScope.launch(Dispatchers.IO) {
             val response = container.dietChatEngine.sendMessage(
-                message = text,
+                message = actualPrompt,
                 history = history,
                 snapshot = snapshotState.value,
             ).getOrElse {
@@ -125,33 +142,10 @@ class CoachChatViewModel(
             _uiState.value = _uiState.value.copy(
                 messages = _uiState.value.messages + DietChatMessage(ChatRole.Assistant, response),
                 isSending = false,
+                showOverviewSuggestion = false,
             )
         }
     }
-
-    private suspend fun runAutomaticOpeningAnalysis(snapshot: DietChatSnapshot) {
-        _uiState.value = _uiState.value.copy(isSending = true)
-        val hasTodayEntries = snapshot.entries.any { it.dateIso == container.localDateProvider.today().toString() }
-        val openingPrompt = if (hasTodayEntries) {
-            "Give me a short analysis of today's tracked meals for weight loss and healthy eating habits."
-        } else {
-            "There are no meals logged today yet. Analyze yesterday's tracked meals instead, if available, for weight loss and healthy eating habits. If yesterday is also empty, say briefly that there is not enough recent meal data yet."
-        }
-        val response = container.dietChatEngine.sendMessage(
-            message = openingPrompt,
-            history = _uiState.value.messages,
-            snapshot = snapshot,
-        ).getOrElse {
-            "I can review today's meals once you log them. Try taking a food photo first."
-        }
-        _uiState.value = _uiState.value.copy(
-            messages = _uiState.value.messages + DietChatMessage(ChatRole.Assistant, response),
-            isSending = false,
-        )
-    }
-
-    private fun hasMeaningfulSnapshot(snapshot: DietChatSnapshot): Boolean =
-        snapshot.todayBudgetCalories != null || snapshot.entries.isNotEmpty()
 }
 
 class CoachChatViewModelFactory(
