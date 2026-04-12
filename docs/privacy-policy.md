@@ -43,4 +43,4 @@
 
 ## Contact / Publisher
 
-- Replace this section with your legal entity name, contact email, and support URL before publishing
+zvaka.reply@gmail.com
