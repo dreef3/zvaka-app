@@ -49,7 +49,7 @@ android {
                 keyPassword = signingProperties.getProperty("debugKeyPassword")
             }
         }
-        if (signingProperties.isNotEmpty()) {
+        if (signingProperties.getProperty("storeFile") != null) {
             create("release") {
                 storeFile = rootProject.file(signingProperties.getProperty("storeFile"))
                 storePassword = signingProperties.getProperty("storePassword")
