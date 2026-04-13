@@ -33,9 +33,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.app.media.ModelDownloadState
-import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.network.NetworkConnectionType
 import com.dreef3.weightlossapp.app.notifications.needsNotificationPermission
+import com.dreef3.weightlossapp.chat.CoachModel
+import com.dreef3.weightlossapp.chat.requiredModelDescriptor
 import com.dreef3.weightlossapp.features.chat.CoachChatScreenRoute
 import com.dreef3.weightlossapp.features.capture.FoodCaptureScreenRoute
 import com.dreef3.weightlossapp.features.onboarding.LocalModelPreparationScreen
@@ -165,21 +166,23 @@ fun AppNavHost(
                 val context = LocalContext.current
                 val activity = context as? Activity
                 val container = AppContainer.instance
+                val coachModel by container.preferences.coachModel.collectAsStateWithLifecycle(initialValue = CoachModel.Gemma)
+                val coachDescriptor = coachModel.requiredModelDescriptor()
                 val downloadState by container.modelDownloadRepository
-                    .observeState(ModelDescriptors.gemma)
+                    .observeState(coachDescriptor)
                     .collectAsStateWithLifecycle(initialValue = ModelDownloadState())
-                val coachReady = container.modelStorage.hasUsableModel(ModelDescriptors.gemma)
+                val coachReady = container.modelStorage.hasUsableModel(coachDescriptor)
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestPermission(),
-                ) { container.modelDownloadRepository.enqueueIfNeeded(ModelDescriptors.gemma) }
+                ) { container.modelDownloadRepository.enqueueIfNeeded(coachDescriptor) }
                 fun requestDownload() {
                     if (activity != null && needsNotificationPermission(context)) {
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     } else {
-                        container.modelDownloadRepository.enqueueIfNeeded(ModelDescriptors.gemma)
+                        container.modelDownloadRepository.enqueueIfNeeded(coachDescriptor)
                     }
                 }
-                LaunchedEffect(coachReady, downloadState.isDownloading) {
+                LaunchedEffect(coachDescriptor.fileName, coachReady, downloadState.isDownloading) {
                     if (!coachReady &&
                         !downloadState.isDownloading &&
                         container.networkConnectionMonitor.currentConnectionType() == NetworkConnectionType.Wifi
@@ -219,6 +222,8 @@ fun AppNavHost(
                 MealDebugScreenRoute(
                     container = AppContainer.instance,
                     entryId = entryId,
+                    onRetry = { navController.popBackStack() },
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable(AppDestinations.Profile) {

@@ -9,6 +9,7 @@ import com.dreef3.weightlossapp.data.local.entity.DailyCalorieBudgetPeriodEntity
 import com.dreef3.weightlossapp.data.local.entity.FoodEntryEntity
 import com.dreef3.weightlossapp.data.local.entity.ProfileEntity
 import com.dreef3.weightlossapp.data.preferences.AppPreferences
+import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import org.json.JSONArray
 import org.json.JSONObject
@@ -121,6 +122,7 @@ class AppDataBackupManager(
                 JSONObject().apply {
                     put(HAS_COMPLETED_ONBOARDING_KEY, preferenceSnapshot.hasCompletedOnboarding)
                     put(COACH_AUTO_ADVICE_ENABLED_KEY, preferenceSnapshot.coachAutoAdviceEnabled)
+                    put(COACH_MODEL_KEY, preferenceSnapshot.coachModelStorageKey)
                     put(CALORIE_ESTIMATION_MODEL_KEY, preferenceSnapshot.calorieEstimationModelStorageKey)
                 },
             )
@@ -155,6 +157,10 @@ class AppDataBackupManager(
             UserPreferenceBackupSnapshot(
                 hasCompletedOnboarding = preferencesJson.optBoolean(HAS_COMPLETED_ONBOARDING_KEY, false),
                 coachAutoAdviceEnabled = preferencesJson.optBoolean(COACH_AUTO_ADVICE_ENABLED_KEY, true),
+                coachModelStorageKey = preferencesJson.optString(
+                    COACH_MODEL_KEY,
+                    CoachModel.Gemma.storageKey,
+                ),
                 calorieEstimationModelStorageKey = preferencesJson.optString(
                     CALORIE_ESTIMATION_MODEL_KEY,
                     CalorieEstimationModel.Gemma.storageKey,
@@ -360,6 +366,7 @@ class AppDataBackupManager(
         const val COACH_CHAT_MESSAGES_KEY = "coachChatMessages"
         const val HAS_COMPLETED_ONBOARDING_KEY = "hasCompletedOnboarding"
         const val COACH_AUTO_ADVICE_ENABLED_KEY = "coachAutoAdviceEnabled"
+        const val COACH_MODEL_KEY = "coachModel"
         const val CALORIE_ESTIMATION_MODEL_KEY = "calorieEstimationModel"
     }
 }

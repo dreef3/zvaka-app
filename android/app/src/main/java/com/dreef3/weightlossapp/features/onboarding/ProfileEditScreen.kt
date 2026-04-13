@@ -1,6 +1,7 @@
 package com.dreef3.weightlossapp.features.onboarding
 
 import android.app.Activity
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -34,16 +36,24 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkManager
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.app.media.ModelDownloadState
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.sync.DriveAuthorizationOutcome
 import com.dreef3.weightlossapp.app.sync.DriveSyncState
+import com.dreef3.weightlossapp.chat.CoachModel
+import com.dreef3.weightlossapp.chat.requiredModelDescriptor
+import com.dreef3.weightlossapp.inference.CalorieEstimationModel
+import com.dreef3.weightlossapp.inference.primaryModelDescriptor
+import com.dreef3.weightlossapp.inference.requiredModelDescriptors
 import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileRequest
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 
 private enum class PendingDriveAction {
     Connect,
@@ -61,9 +71,26 @@ fun ProfileEditScreen(
     val profile by container.profileRepository.observeProfile().collectAsStateWithLifecycle(initialValue = null)
     val budgetPeriods by container.profileRepository.observeBudgetPeriods().collectAsStateWithLifecycle(initialValue = emptyList())
     val driveSyncState by container.preferences.driveSyncState.collectAsStateWithLifecycle(initialValue = DriveSyncState())
+    val coachModel by container.preferences.coachModel.collectAsStateWithLifecycle(initialValue = CoachModel.Gemma)
+    val calorieModel by container.preferences.calorieEstimationModel.collectAsStateWithLifecycle(initialValue = CalorieEstimationModel.Gemma)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val activity = context as? Activity
+    val selectedCalorieDescriptor = calorieModel.primaryModelDescriptor()
+    val selectedCalorieStateFlow = remember(calorieModel, container) {
+        combinedDownloadState(
+            modelDownloadController = container.modelDownloadRepository,
+            models = calorieModel.requiredModelDescriptors(),
+        )
+    }
+    val selectedCalorieDownloadState by selectedCalorieStateFlow
+        .collectAsStateWithLifecycle(initialValue = ModelDownloadState())
+    val selectedCalorieReady = calorieModel.requiredModelDescriptors().all(container.modelStorage::hasUsableModel)
+    val selectedCoachDescriptor = coachModel.requiredModelDescriptor()
+    val selectedCoachDownloadState by container.modelDownloadRepository
+        .observeState(selectedCoachDescriptor)
+        .collectAsStateWithLifecycle(initialValue = ModelDownloadState())
+    val selectedCoachReady = container.modelStorage.hasUsableModel(selectedCoachDescriptor)
 
     var form by remember { mutableStateOf(OnboardingFormState()) }
     var hasLoaded by remember { mutableStateOf(false) }
@@ -283,6 +310,134 @@ fun ProfileEditScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
+                    text = "Photo estimation model",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    CalorieEstimationModel.entries.forEach { model ->
+                        FilterChip(
+                            selected = calorieModel == model,
+                            onClick = {
+                                scope.launch {
+                                    container.preferences.setCalorieEstimationModel(model)
+                                    model.requiredModelDescriptors().forEach { descriptor ->
+                                        container.modelStorage.cleanupIncompleteModelFiles(descriptor)
+                                        if (!container.modelStorage.hasUsableModel(descriptor)) {
+                                            container.modelDownloadRepository.enqueueIfNeeded(descriptor)
+                                        }
+                                    }
+                                }
+                            },
+                            label = { Text(model.displayName) },
+                        )
+                    }
+                }
+                Text(
+                    text = if (selectedCalorieReady) {
+                        "${selectedCalorieDescriptor.displayName} photo model is ready on this device."
+                    } else if (selectedCalorieDownloadState.isDownloading) {
+                        "Downloading ${selectedCalorieDescriptor.displayName}... ${selectedCalorieDownloadState.progressPercent ?: 0}%"
+                    } else {
+                        "${selectedCalorieDescriptor.displayName} photo model is not downloaded yet."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                selectedCalorieDownloadState.errorMessage?.let { error ->
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (calorieModel != CalorieEstimationModel.Gemma) {
+                    Text(
+                        text = "This model uses GGUF via llama.cpp and requires a separate mmproj file for photo estimation.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedButton(
+                    onClick = { calorieModel.requiredModelDescriptors().forEach(container.modelDownloadRepository::enqueueIfNeeded) },
+                    enabled = !selectedCalorieReady && !selectedCalorieDownloadState.isDownloading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (selectedCalorieDownloadState.isDownloading) {
+                            "Downloading photo model..."
+                        } else {
+                            "Download selected photo model"
+                        },
+                    )
+                }
+                Text(
+                    text = "Coach model",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    CoachModel.entries.forEach { model ->
+                        FilterChip(
+                            selected = coachModel == model,
+                            onClick = {
+                                scope.launch {
+                                    container.preferences.setCoachModel(model)
+                                    container.modelStorage.cleanupIncompleteModelFiles(model.requiredModelDescriptor())
+                                    if (!container.modelStorage.hasUsableModel(model.requiredModelDescriptor())) {
+                                        container.modelDownloadRepository.enqueueIfNeeded(model.requiredModelDescriptor())
+                                    }
+                                }
+                            },
+                            label = { Text(model.displayName) },
+                        )
+                    }
+                }
+                Text(
+                    text = if (selectedCoachReady) {
+                        "${selectedCoachDescriptor.displayName} is ready on this device."
+                    } else if (selectedCoachDownloadState.isDownloading) {
+                        "Downloading ${selectedCoachDescriptor.displayName}... ${selectedCoachDownloadState.progressPercent ?: 0}%"
+                    } else {
+                        "${selectedCoachDescriptor.displayName} is not downloaded yet."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                selectedCoachDownloadState.errorMessage?.let { error ->
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (coachModel != CoachModel.Gemma) {
+                    Text(
+                        text = "This model uses GGUF via llama.cpp for on-device chat. Tool-calling style meal edits remain stronger on the Gemma path.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedButton(
+                    onClick = { container.modelDownloadRepository.enqueueIfNeeded(selectedCoachDescriptor) },
+                    enabled = !selectedCoachReady && !selectedCoachDownloadState.isDownloading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (selectedCoachDownloadState.isDownloading) {
+                            "Downloading coach model..."
+                        } else {
+                            "Download selected coach model"
+                        },
+                    )
+                }
+                Text(
                     text = if (driveSyncState.isEnabled) {
                         buildString {
                             append("Google Drive sync is on")
@@ -406,6 +561,22 @@ fun ProfileEditScreen(
                                 WorkManager.getInstance(container.appContext)
                                     .cancelUniqueWork(ModelDescriptors.smolVlm.uniqueWorkName)
                                 WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDescriptors.smolVlmMmproj.uniqueWorkName)
+                                WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDescriptors.smolVlmTflite.uniqueWorkName)
+                                WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDescriptors.smolLm.uniqueWorkName)
+                                WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDescriptors.smolLm2.uniqueWorkName)
+                                WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDescriptors.qwen0_8b.uniqueWorkName)
+                                WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDescriptors.qwen0_8bMmproj.uniqueWorkName)
+                                WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDescriptors.qwen2b.uniqueWorkName)
+                                WorkManager.getInstance(container.appContext)
+                                    .cancelUniqueWork(ModelDescriptors.qwen2bMmproj.uniqueWorkName)
+                                WorkManager.getInstance(container.appContext)
                                     .cancelUniqueWork(ModelDescriptors.gemma.uniqueWorkName)
                                 WorkManager.getInstance(container.appContext).cancelAllWork()
                                 container.driveSyncScheduler.disablePeriodicSync()
@@ -471,6 +642,26 @@ fun ProfileEditScreen(
                     Text("Cancel")
                 }
             },
+        )
+    }
+}
+
+private fun combinedDownloadState(
+    modelDownloadController: com.dreef3.weightlossapp.app.media.ModelDownloadController,
+    models: List<com.dreef3.weightlossapp.app.media.ModelDescriptor>,
+): Flow<ModelDownloadState> {
+    val states = models.map(modelDownloadController::observeState)
+    return combine(states) { stateArray ->
+        val values = stateArray.toList()
+        val totalBytes = values.sumOf { it.totalBytes }
+        val downloadedBytes = values.sumOf { it.downloadedBytes }
+        val progressPercent = if (totalBytes > 0L) ((downloadedBytes * 100L) / totalBytes).toInt() else null
+        ModelDownloadState(
+            isDownloading = values.any { it.isDownloading },
+            progressPercent = progressPercent,
+            downloadedBytes = downloadedBytes,
+            totalBytes = totalBytes,
+            errorMessage = values.firstNotNullOfOrNull { it.errorMessage },
         )
     }
 }

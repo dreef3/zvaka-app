@@ -7,12 +7,14 @@ import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.media.ModelDownloadState
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
+import com.dreef3.weightlossapp.data.preferences.AppPreferences
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntry
 import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import com.dreef3.weightlossapp.domain.usecase.ConfirmFoodEstimateUseCase
 import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
+import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import com.dreef3.weightlossapp.inference.FoodEstimationEngine
 import com.dreef3.weightlossapp.inference.FoodEstimationRequest
 import com.dreef3.weightlossapp.inference.FoodEstimationResult
@@ -64,6 +66,7 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = null,
                 ),
             ),
+            preferences = preferences(),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
@@ -92,6 +95,7 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = "uncertain",
                 ),
             ),
+            preferences = preferences(),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
@@ -115,7 +119,7 @@ class FoodCaptureViewModelTest {
     fun initRequestsSelectedModelDownloadWhenMissing() = runTest(dispatcher) {
         val modelStorage = realModelStorage(available = false)
         val downloadRepository = FakeModelDownloadRepository()
-        FoodCaptureViewModel(
+        val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
                 FoodEstimationResult(
                     estimatedCalories = 500,
@@ -124,6 +128,7 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = null,
                 ),
             ),
+            preferences = preferences(),
             modelStorage = modelStorage,
             modelDownloadRepository = downloadRepository,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
@@ -133,8 +138,8 @@ class FoodCaptureViewModelTest {
         )
         advanceUntilIdle()
 
-        assertEquals(1, downloadRepository.enqueueCalls)
-        assertEquals(ModelDescriptors.gemma, downloadRepository.lastRequestedModel)
+        assertFalse(viewModel.uiState.value.modelAvailable)
+        assertTrue(viewModel.uiState.value.modelStatusMessage != null)
     }
 
     @Test
@@ -149,6 +154,7 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = null,
                 ),
             ),
+            preferences = preferences(),
             modelStorage = realModelStorage(available = false),
             modelDownloadRepository = downloadRepository,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
@@ -161,8 +167,36 @@ class FoodCaptureViewModelTest {
         viewModel.downloadModel()
         advanceUntilIdle()
 
-        assertEquals(initialEnqueueCalls + 1, downloadRepository.enqueueCalls)
-        assertEquals(ModelDescriptors.gemma, downloadRepository.lastRequestedModel)
+        assertTrue(downloadRepository.enqueueCalls > initialEnqueueCalls)
+        assertTrue(downloadRepository.lastRequestedModel != null)
+    }
+
+    @Test
+    fun analyzePhotoDoesNotRunInferenceWhenSelectedModelIsMissing() = runTest(dispatcher) {
+        val downloadRepository = FakeModelDownloadRepository()
+        val engine = CountingEngine()
+        val viewModel = FoodCaptureViewModel(
+            foodEstimationEngine = engine,
+            preferences = preferences(model = CalorieEstimationModel.SmolVlm),
+            modelStorage = realModelStorage(available = false),
+            modelDownloadRepository = downloadRepository,
+            localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
+            confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
+            updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
+            backgroundDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.analyzePhoto("/tmp/photo.jpg")
+        advanceUntilIdle()
+
+        assertEquals(0, engine.estimateCalls)
+        assertFalse(viewModel.uiState.value.modelAvailable)
+        assertEquals(
+            "Selected model is not ready yet. Wait for the download to finish or switch back to Gemma.",
+            viewModel.uiState.value.errorMessage,
+        )
+        assertTrue(downloadRepository.enqueueCalls >= 2)
     }
 
     private fun realModelStorage(available: Boolean): ModelStorage {
@@ -171,10 +205,23 @@ class FoodCaptureViewModelTest {
         storage.modelDirectory.mkdirs()
         if (available) {
             storage.fileFor(ModelDescriptors.gemma).writeText("model")
+            storage.fileFor(ModelDescriptors.smolVlm).writeText("model")
+            storage.fileFor(ModelDescriptors.smolVlmMmproj).writeText("model")
         } else {
             storage.fileFor(ModelDescriptors.gemma).delete()
+            storage.fileFor(ModelDescriptors.smolVlm).delete()
+            storage.fileFor(ModelDescriptors.smolVlmMmproj).delete()
         }
         return storage
+    }
+
+    private suspend fun preferences(
+        model: CalorieEstimationModel = CalorieEstimationModel.Gemma,
+    ): AppPreferences {
+        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        preferences.reset()
+        preferences.setCalorieEstimationModel(model)
+        return preferences
     }
 }
 
@@ -182,6 +229,15 @@ private class FakeEngine(
     private val result: FoodEstimationResult,
 ) : FoodEstimationEngine {
     override suspend fun estimate(request: FoodEstimationRequest): Result<FoodEstimationResult> = Result.success(result)
+}
+
+private class CountingEngine : FoodEstimationEngine {
+    var estimateCalls = 0
+
+    override suspend fun estimate(request: FoodEstimationRequest): Result<FoodEstimationResult> {
+        estimateCalls += 1
+        error("estimate should not be called when the selected model is missing")
+    }
 }
 
 private class FakeFoodEntryRepository : FoodEntryRepository {

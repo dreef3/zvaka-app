@@ -11,12 +11,13 @@ import com.dreef3.weightlossapp.app.sync.DriveSyncState
 import com.dreef3.weightlossapp.app.sync.DriveSyncTrigger
 import com.dreef3.weightlossapp.app.sync.NoOpDriveSyncTrigger
 import com.dreef3.weightlossapp.app.sync.UserPreferenceBackupSnapshot
+import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.inference.CalorieEstimationModel
+import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import java.io.IOException
 
 private val Context.dataStore by preferencesDataStore(name = "app_prefs")
 
@@ -35,6 +36,15 @@ class AppPreferences(
             if (it is IOException) emit(emptyPreferences()) else throw it
         }
         .map { prefs -> prefs[Keys.CoachAutoAdviceEnabled] ?: true }
+
+    val coachModel: Flow<CoachModel> = context.dataStore.data
+        .catch {
+            if (it is IOException) emit(emptyPreferences()) else throw it
+        }
+        .map { prefs ->
+            prefs[Keys.CoachModel]?.let(CoachModel::fromStorageKey)
+                ?: CoachModel.Gemma
+        }
 
     val calorieEstimationModel: Flow<CalorieEstimationModel> = context.dataStore.data
         .catch {
@@ -75,6 +85,14 @@ class AppPreferences(
         driveSyncTrigger.requestSync("preferences:coach_auto_advice")
     }
 
+    suspend fun setCoachModel(value: CoachModel) {
+        if (readCoachModel() == value) return
+        context.dataStore.edit { prefs ->
+            prefs[Keys.CoachModel] = value.storageKey
+        }
+        driveSyncTrigger.requestSync("preferences:coach_model")
+    }
+
     suspend fun setCalorieEstimationModel(value: CalorieEstimationModel) {
         if (readCalorieEstimationModel() == value) return
         context.dataStore.edit { prefs ->
@@ -86,6 +104,11 @@ class AppPreferences(
     suspend fun readCalorieEstimationModel(): CalorieEstimationModel =
         calorieEstimationModel.map { it }.catch {
             if (it is IOException) emit(CalorieEstimationModel.Gemma) else throw it
+        }.first()
+
+    suspend fun readCoachModel(): CoachModel =
+        coachModel.map { it }.catch {
+            if (it is IOException) emit(CoachModel.Gemma) else throw it
         }.first()
 
     suspend fun readDriveSyncState(): DriveSyncState = driveSyncState.first()
@@ -161,6 +184,7 @@ class AppPreferences(
         UserPreferenceBackupSnapshot(
             hasCompletedOnboarding = hasCompletedOnboarding.first(),
             coachAutoAdviceEnabled = coachAutoAdviceEnabled.first(),
+            coachModelStorageKey = readCoachModel().storageKey,
             calorieEstimationModelStorageKey = readCalorieEstimationModel().storageKey,
         )
 
@@ -168,6 +192,7 @@ class AppPreferences(
         context.dataStore.edit { prefs ->
             prefs[Keys.HasCompletedOnboarding] = snapshot.hasCompletedOnboarding
             prefs[Keys.CoachAutoAdviceEnabled] = snapshot.coachAutoAdviceEnabled
+            prefs[Keys.CoachModel] = snapshot.coachModelStorageKey
             prefs[Keys.CalorieEstimationModel] = snapshot.calorieEstimationModelStorageKey
         }
     }
@@ -181,6 +206,7 @@ class AppPreferences(
     private object Keys {
         val HasCompletedOnboarding = booleanPreferencesKey("has_completed_onboarding")
         val CoachAutoAdviceEnabled = booleanPreferencesKey("coach_auto_advice_enabled")
+        val CoachModel = stringPreferencesKey("coach_model")
         val CalorieEstimationModel = stringPreferencesKey("calorie_estimation_model")
         val GoogleDriveSyncEnabled = booleanPreferencesKey("google_drive_sync_enabled")
         val GoogleDriveAccountEmail = stringPreferencesKey("google_drive_account_email")

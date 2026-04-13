@@ -36,7 +36,7 @@ class ModelDownloadRepository(
 
         workManager.enqueueUniqueWork(
             model.uniqueWorkName,
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.REPLACE,
             request,
         )
     }

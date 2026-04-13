@@ -3,16 +3,28 @@ package com.dreef3.weightlossapp.inference
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 
 internal object FoodEstimationTextParser {
+    private val genericLabels = setOf(
+        "meal",
+        "food",
+        "dish",
+        "plate",
+        "lunch",
+        "dinner",
+        "breakfast",
+        "snack",
+    )
+
     fun parse(raw: String): FoodEstimationResult {
         val descriptionMatch = Regex("""(?im)^description\s*:\s*(.+)$""").findAll(raw).lastOrNull()
         val caloriesMatch = Regex("""(?im)^calories\s*:\s*(\d{1,5})$""").findAll(raw).lastOrNull()
         if (caloriesMatch != null) {
+            val description = normalizeDescription(descriptionMatch?.groupValues?.get(1))
             return FoodEstimationResult(
                 estimatedCalories = caloriesMatch.groupValues[1].toInt().coerceAtLeast(0),
                 confidenceState = ConfidenceState.High,
-                detectedFoodLabel = descriptionMatch?.groupValues?.get(1)?.trim()?.ifBlank { null },
+                detectedFoodLabel = description,
                 confidenceNotes = null,
-                detectedItems = descriptionMatch?.groupValues?.get(1)?.trim()?.let(::listOf) ?: emptyList(),
+                detectedItems = description?.let(::listOf) ?: emptyList(),
                 debugInteractionLog = raw,
             )
         }
@@ -48,7 +60,7 @@ internal object FoodEstimationTextParser {
             )
         }
 
-        val label = values["food"].orEmpty().ifBlank { "unknown meal" }
+        val label = normalizeDescription(values["food"]) ?: "unknown meal"
         val confidence = when (values["confidence"]?.lowercase()) {
             "high" -> ConfidenceState.High
             else -> ConfidenceState.NonHigh
@@ -62,5 +74,15 @@ internal object FoodEstimationTextParser {
             detectedItems = listOf(label),
             debugInteractionLog = raw,
         )
+    }
+
+    private fun normalizeDescription(value: String?): String? {
+        val trimmed = value?.trim()?.ifBlank { null } ?: return null
+        val normalized = trimmed
+            .removePrefix("\"")
+            .removeSuffix("\"")
+            .trim()
+            .ifBlank { return null }
+        return normalized
     }
 }

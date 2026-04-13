@@ -14,7 +14,7 @@ class SmolVlmPocRunner(
 ) {
     suspend fun runSampleIfModelExists(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val modelFile = modelStorage.fileFor(ModelDescriptors.smolVlm)
+            val modelFile = modelStorage.fileFor(ModelDescriptors.smolVlmTflite)
             if (!modelFile.exists() || modelFile.length() == 0L) {
                 throw IllegalStateException("SmolVLM model missing at ${modelFile.absolutePath}")
             }
