@@ -301,34 +301,50 @@ class CoachChatViewModel(
         )
 
         viewModelScope.launch(Dispatchers.IO) {
-            val sessionId = ensureWritableSessionId()
-            val userMessageTime = System.currentTimeMillis()
-            container.coachChatRepository.appendMessage(
-                sessionId = sessionId,
-                role = ChatRole.User,
-                text = userVisibleText,
-                createdAtEpochMs = userMessageTime,
-                imagePath = null,
-            )
-            val history = container.coachChatRepository.getMessages(sessionId)
-            val response = container.dietChatEngine.sendMessage(
-                message = actualPrompt,
-                history = history,
-                snapshot = snapshotState.value,
-            ).getOrElse {
-                Log.e(TAG, "dietChatEngine returned failure", it)
-                "I couldn't answer that yet. Try again in a moment."
+            runCatching {
+                val sessionId = ensureWritableSessionId()
+                val userMessageTime = System.currentTimeMillis()
+                container.coachChatRepository.appendMessage(
+                    sessionId = sessionId,
+                    role = ChatRole.User,
+                    text = userVisibleText,
+                    createdAtEpochMs = userMessageTime,
+                    imagePath = null,
+                )
+                val history = container.coachChatRepository.getMessages(sessionId)
+                val response = container.dietChatEngine.sendMessage(
+                    message = actualPrompt,
+                    history = history,
+                    snapshot = snapshotState.value,
+                ).getOrElse {
+                    Log.e(TAG, "dietChatEngine returned failure", it)
+                    "I couldn't answer that yet. Try again in a moment."
+                }
+                val assistantTime = System.currentTimeMillis()
+                container.coachChatRepository.appendMessage(
+                    sessionId = sessionId,
+                    role = ChatRole.Assistant,
+                    text = response,
+                    createdAtEpochMs = assistantTime,
+                    imagePath = null,
+                )
+                container.coachChatRepository.updateSessionSummary(sessionId, summarizeConversation(response, history.lastOrNull()?.text))
+                debugLog("assistant response chars=${response.length}")
+            }.onFailure { throwable ->
+                Log.e(TAG, "sendMessage flow failed", throwable)
+                runCatching {
+                    val sessionId = ensureWritableSessionId()
+                    val fallback = "I hit an internal error while answering. Please try again."
+                    container.coachChatRepository.appendMessage(
+                        sessionId = sessionId,
+                        role = ChatRole.Assistant,
+                        text = fallback,
+                        createdAtEpochMs = System.currentTimeMillis(),
+                        imagePath = null,
+                    )
+                    container.coachChatRepository.updateSessionSummary(sessionId, summarizeConversation(fallback, userVisibleText))
+                }
             }
-            val assistantTime = System.currentTimeMillis()
-            container.coachChatRepository.appendMessage(
-                sessionId = sessionId,
-                role = ChatRole.Assistant,
-                text = response,
-                createdAtEpochMs = assistantTime,
-                imagePath = null,
-            )
-            container.coachChatRepository.updateSessionSummary(sessionId, summarizeConversation(response, history.lastOrNull()?.text))
-            debugLog("assistant response chars=${response.length}")
             _uiState.value = _uiState.value.copy(
                 isSending = false,
                 showOverviewSuggestion = false,

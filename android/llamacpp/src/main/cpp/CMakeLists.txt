@@ -32,6 +32,9 @@ endif()
 
 set(LLAMA_SRC ${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/llama.cpp)
 add_subdirectory(${LLAMA_SRC} build-llama)
+if(NOT DEFINED LLAMA_INSTALL_VERSION OR "${LLAMA_INSTALL_VERSION}" STREQUAL "")
+    set(LLAMA_INSTALL_VERSION 0)
+endif()
 add_subdirectory(${LLAMA_SRC}/tools/mtmd build-mtmd)
 
 add_library(${CMAKE_PROJECT_NAME} SHARED

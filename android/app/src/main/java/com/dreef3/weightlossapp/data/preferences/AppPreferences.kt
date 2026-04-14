@@ -52,6 +52,15 @@ class AppPreferences(
                 ?: CoachModel.Gemma
         }
 
+    val gemmaBackend: Flow<GemmaBackend> = dataStore.data
+        .catch {
+            if (it is IOException) emit(emptyPreferences()) else throw it
+        }
+        .map { prefs ->
+            prefs[Keys.GemmaBackend]?.let(GemmaBackend::fromStorageKey)
+                ?: GemmaBackend.CPU
+        }
+
     val calorieEstimationModel: Flow<CalorieEstimationModel> = dataStore.data
         .catch {
             if (it is IOException) emit(emptyPreferences()) else throw it
@@ -99,6 +108,14 @@ class AppPreferences(
         driveSyncTrigger.requestSync("preferences:coach_model")
     }
 
+    suspend fun setGemmaBackend(value: GemmaBackend) {
+        if (readGemmaBackend() == value) return
+        dataStore.edit { prefs ->
+            prefs[Keys.GemmaBackend] = value.storageKey
+        }
+        driveSyncTrigger.requestSync("preferences:gemma_backend")
+    }
+
     suspend fun setCalorieEstimationModel(value: CalorieEstimationModel) {
         if (readCalorieEstimationModel() == value) return
         dataStore.edit { prefs ->
@@ -115,6 +132,11 @@ class AppPreferences(
     suspend fun readCoachModel(): CoachModel =
         coachModel.map { it }.catch {
             if (it is IOException) emit(CoachModel.Gemma) else throw it
+        }.first()
+
+    suspend fun readGemmaBackend(): GemmaBackend =
+        gemmaBackend.map { it }.catch {
+            if (it is IOException) emit(GemmaBackend.CPU) else throw it
         }.first()
 
     suspend fun readDriveSyncState(): DriveSyncState = driveSyncState.first()
@@ -192,6 +214,7 @@ class AppPreferences(
             coachAutoAdviceEnabled = coachAutoAdviceEnabled.first(),
             coachModelStorageKey = readCoachModel().storageKey,
             calorieEstimationModelStorageKey = readCalorieEstimationModel().storageKey,
+            gemmaBackendStorageKey = readGemmaBackend().storageKey,
         )
 
     suspend fun restoreUserBackupSnapshot(snapshot: UserPreferenceBackupSnapshot) {
@@ -200,6 +223,7 @@ class AppPreferences(
             prefs[Keys.CoachAutoAdviceEnabled] = snapshot.coachAutoAdviceEnabled
             prefs[Keys.CoachModel] = snapshot.coachModelStorageKey
             prefs[Keys.CalorieEstimationModel] = snapshot.calorieEstimationModelStorageKey
+            prefs[Keys.GemmaBackend] = snapshot.gemmaBackendStorageKey
         }
     }
 
@@ -213,6 +237,7 @@ class AppPreferences(
         val HasCompletedOnboarding = booleanPreferencesKey("has_completed_onboarding")
         val CoachAutoAdviceEnabled = booleanPreferencesKey("coach_auto_advice_enabled")
         val CoachModel = stringPreferencesKey("coach_model")
+        val GemmaBackend = stringPreferencesKey("gemma_backend")
         val CalorieEstimationModel = stringPreferencesKey("calorie_estimation_model")
         val GoogleDriveSyncEnabled = booleanPreferencesKey("google_drive_sync_enabled")
         val GoogleDriveAccountEmail = stringPreferencesKey("google_drive_account_email")

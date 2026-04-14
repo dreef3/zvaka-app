@@ -13,4 +13,5 @@ data class UserPreferenceBackupSnapshot(
     val coachAutoAdviceEnabled: Boolean,
     val coachModelStorageKey: String,
     val calorieEstimationModelStorageKey: String,
+    val gemmaBackendStorageKey: String,
 )

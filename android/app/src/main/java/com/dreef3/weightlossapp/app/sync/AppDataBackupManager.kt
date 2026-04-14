@@ -9,6 +9,7 @@ import com.dreef3.weightlossapp.data.local.entity.DailyCalorieBudgetPeriodEntity
 import com.dreef3.weightlossapp.data.local.entity.FoodEntryEntity
 import com.dreef3.weightlossapp.data.local.entity.ProfileEntity
 import com.dreef3.weightlossapp.data.preferences.AppPreferences
+import com.dreef3.weightlossapp.data.preferences.GemmaBackend
 import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import org.json.JSONArray
@@ -124,6 +125,7 @@ class AppDataBackupManager(
                     put(COACH_AUTO_ADVICE_ENABLED_KEY, preferenceSnapshot.coachAutoAdviceEnabled)
                     put(COACH_MODEL_KEY, preferenceSnapshot.coachModelStorageKey)
                     put(CALORIE_ESTIMATION_MODEL_KEY, preferenceSnapshot.calorieEstimationModelStorageKey)
+                    put(GEMMA_BACKEND_KEY, preferenceSnapshot.gemmaBackendStorageKey)
                 },
             )
             put(PROFILE_KEY, profile?.toJson())
@@ -164,6 +166,10 @@ class AppDataBackupManager(
                 calorieEstimationModelStorageKey = preferencesJson.optString(
                     CALORIE_ESTIMATION_MODEL_KEY,
                     CalorieEstimationModel.Gemma.storageKey,
+                ),
+                gemmaBackendStorageKey = preferencesJson.optString(
+                    GEMMA_BACKEND_KEY,
+                    GemmaBackend.CPU.storageKey,
                 ),
             ),
         )
@@ -368,5 +374,6 @@ class AppDataBackupManager(
         const val COACH_AUTO_ADVICE_ENABLED_KEY = "coachAutoAdviceEnabled"
         const val COACH_MODEL_KEY = "coachModel"
         const val CALORIE_ESTIMATION_MODEL_KEY = "calorieEstimationModel"
+        const val GEMMA_BACKEND_KEY = "gemmaBackend"
     }
 }

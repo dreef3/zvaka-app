@@ -28,6 +28,7 @@ fun SummaryCards(
     summary: DailySummary,
     onOpenTrends: () -> Unit,
 ) {
+    val isOverBudget = summary.remainingCalories < 0
     val progress = when {
         summary.budgetCalories <= 0 -> 0f
         summary.consumedCalories <= 0 -> 0f
@@ -38,7 +39,13 @@ fun SummaryCards(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpenTrends),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isOverBudget) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
+        ),
         shape = RoundedCornerShape(32.dp),
     ) {
         Row(
@@ -57,19 +64,39 @@ fun SummaryCards(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = "Remaining today",
+                    text = if (isOverBudget) "Over budget today" else "Remaining today",
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isOverBudget) {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
                 Text(
-                    text = summary.remainingCalories.toString(),
+                    text = if (isOverBudget) {
+                        "${kotlin.math.abs(summary.remainingCalories)} kcal over"
+                    } else {
+                        summary.remainingCalories.toString()
+                    },
                     style = MaterialTheme.typography.displayMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = if (isOverBudget) {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
                 )
                 Text(
-                    text = "Consumed ${summary.consumedCalories} kcal",
+                    text = if (isOverBudget) {
+                        "Consumed ${summary.consumedCalories} kcal. Over your daily target."
+                    } else {
+                        "Consumed ${summary.consumedCalories} kcal"
+                    },
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isOverBudget) {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
         }
@@ -81,8 +108,17 @@ private fun CalorieRing(
     progress: Float,
     remainingCalories: Int,
 ) {
-    val trackColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    val progressColor = MaterialTheme.colorScheme.primary
+    val isOverBudget = remainingCalories < 0
+    val trackColor = if (isOverBudget) {
+        MaterialTheme.colorScheme.error.copy(alpha = 0.20f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val progressColor = if (isOverBudget) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
     Box(
         modifier = Modifier.size(128.dp),
         contentAlignment = Alignment.Center,
@@ -106,14 +142,26 @@ private fun CalorieRing(
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = remainingCalories.toString(),
+                text = if (isOverBudget) {
+                    kotlin.math.abs(remainingCalories).toString()
+                } else {
+                    remainingCalories.toString()
+                },
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (isOverBudget) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
             )
             Text(
-                text = "kcal left",
+                text = if (isOverBudget) "kcal over" else "kcal left",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isOverBudget) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
         }
     }

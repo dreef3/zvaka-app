@@ -127,6 +127,7 @@ class AppContainer private constructor(context: Context) {
     val gemmaDietChatEngine: DietChatEngine = LiteRtDietChatEngine(
         modelFile = modelStorage.defaultModelFile,
         correctionService = dietEntryCorrectionService,
+        backendPreferenceProvider = preferences::readGemmaBackend,
     )
     private val smolLmDietChatEngine: DietChatEngine = LlamaCppDietChatEngine(
         container = this,

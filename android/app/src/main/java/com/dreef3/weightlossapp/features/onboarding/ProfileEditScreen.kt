@@ -15,6 +15,7 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -42,6 +43,7 @@ import com.dreef3.weightlossapp.app.sync.DriveAuthorizationOutcome
 import com.dreef3.weightlossapp.app.sync.DriveSyncState
 import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.chat.requiredModelDescriptor
+import com.dreef3.weightlossapp.data.preferences.GemmaBackend
 import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import com.dreef3.weightlossapp.inference.primaryModelDescriptor
 import com.dreef3.weightlossapp.inference.requiredModelDescriptors
@@ -72,6 +74,7 @@ fun ProfileEditScreen(
     val budgetPeriods by container.profileRepository.observeBudgetPeriods().collectAsStateWithLifecycle(initialValue = emptyList())
     val driveSyncState by container.preferences.driveSyncState.collectAsStateWithLifecycle(initialValue = DriveSyncState())
     val coachModel by container.preferences.coachModel.collectAsStateWithLifecycle(initialValue = CoachModel.Gemma)
+    val gemmaBackend by container.preferences.gemmaBackend.collectAsStateWithLifecycle(initialValue = GemmaBackend.CPU)
     val calorieModel by container.preferences.calorieEstimationModel.collectAsStateWithLifecycle(initialValue = CalorieEstimationModel.Gemma)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -103,6 +106,7 @@ fun ProfileEditScreen(
     var isDriveBusy by remember { mutableStateOf(false) }
     var driveStatusMessage by remember { mutableStateOf<String?>(null) }
     var pendingDriveAction by remember { mutableStateOf<PendingDriveAction?>(null) }
+    var showAdvancedSettings by remember { mutableStateOf(false) }
     val currentBudget = budgetPeriods.maxByOrNull { it.effectiveFromDate }?.caloriesPerDay
     val requiredResetName = profile?.firstName?.trim().orEmpty()
 
@@ -309,133 +313,171 @@ fun ProfileEditScreen(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Text(
-                    text = "Photo estimation model",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                OutlinedButton(
+                    onClick = { showAdvancedSettings = !showAdvancedSettings },
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    CalorieEstimationModel.entries.forEach { model ->
-                        FilterChip(
-                            selected = calorieModel == model,
-                            onClick = {
-                                scope.launch {
-                                    container.preferences.setCalorieEstimationModel(model)
-                                    model.requiredModelDescriptors().forEach { descriptor ->
-                                        container.modelStorage.cleanupIncompleteModelFiles(descriptor)
-                                        if (!container.modelStorage.hasUsableModel(descriptor)) {
-                                            container.modelDownloadRepository.enqueueIfNeeded(descriptor)
+                    Text(if (showAdvancedSettings) "Hide advanced settings" else "Show advanced settings")
+                }
+                if (showAdvancedSettings) {
+                    Text(
+                        text = "Photo estimation model",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        CalorieEstimationModel.entries.forEach { model ->
+                            FilterChip(
+                                selected = calorieModel == model,
+                                onClick = {
+                                    scope.launch {
+                                        container.preferences.setCalorieEstimationModel(model)
+                                        model.requiredModelDescriptors().forEach { descriptor ->
+                                            container.modelStorage.cleanupIncompleteModelFiles(descriptor)
+                                            if (!container.modelStorage.hasUsableModel(descriptor)) {
+                                                container.modelDownloadRepository.enqueueIfNeeded(descriptor)
+                                            }
                                         }
                                     }
-                                }
-                            },
-                            label = { Text(model.displayName) },
-                        )
+                                },
+                                label = { Text(model.displayName) },
+                            )
+                        }
                     }
-                }
-                Text(
-                    text = if (selectedCalorieReady) {
-                        "${selectedCalorieDescriptor.displayName} photo model is ready on this device."
-                    } else if (selectedCalorieDownloadState.isDownloading) {
-                        "Downloading ${selectedCalorieDescriptor.displayName}... ${selectedCalorieDownloadState.progressPercent ?: 0}%"
-                    } else {
-                        "${selectedCalorieDescriptor.displayName} photo model is not downloaded yet."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                selectedCalorieDownloadState.errorMessage?.let { error ->
                     Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                if (calorieModel != CalorieEstimationModel.Gemma) {
-                    Text(
-                        text = "This model uses GGUF via llama.cpp and requires a separate mmproj file for photo estimation.",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = if (selectedCalorieReady) {
+                            "${selectedCalorieDescriptor.displayName} photo model is ready on this device."
+                        } else if (selectedCalorieDownloadState.isDownloading) {
+                            "Downloading ${selectedCalorieDescriptor.displayName}... ${selectedCalorieDownloadState.progressPercent ?: 0}%"
+                        } else {
+                            "${selectedCalorieDescriptor.displayName} photo model is not downloaded yet."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                OutlinedButton(
-                    onClick = { calorieModel.requiredModelDescriptors().forEach(container.modelDownloadRepository::enqueueIfNeeded) },
-                    enabled = !selectedCalorieReady && !selectedCalorieDownloadState.isDownloading,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+                    selectedCalorieDownloadState.errorMessage?.let { error ->
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (calorieModel != CalorieEstimationModel.Gemma) {
+                        Text(
+                            text = "This model uses GGUF via llama.cpp and requires a separate mmproj file for photo estimation.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { calorieModel.requiredModelDescriptors().forEach(container.modelDownloadRepository::enqueueIfNeeded) },
+                        enabled = !selectedCalorieReady && !selectedCalorieDownloadState.isDownloading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (selectedCalorieDownloadState.isDownloading) {
+                                "Downloading photo model..."
+                            } else {
+                                "Download selected photo model"
+                            },
+                        )
+                    }
                     Text(
-                        if (selectedCalorieDownloadState.isDownloading) {
-                            "Downloading photo model..."
-                        } else {
-                            "Download selected photo model"
-                        },
+                        text = "Coach model",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                Text(
-                    text = "Coach model",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    CoachModel.entries.forEach { model ->
-                        FilterChip(
-                            selected = coachModel == model,
-                            onClick = {
-                                scope.launch {
-                                    container.preferences.setCoachModel(model)
-                                    container.modelStorage.cleanupIncompleteModelFiles(model.requiredModelDescriptor())
-                                    if (!container.modelStorage.hasUsableModel(model.requiredModelDescriptor())) {
-                                        container.modelDownloadRepository.enqueueIfNeeded(model.requiredModelDescriptor())
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        CoachModel.entries.forEach { model ->
+                            FilterChip(
+                                selected = coachModel == model,
+                                onClick = {
+                                    scope.launch {
+                                        container.preferences.setCoachModel(model)
+                                        container.modelStorage.cleanupIncompleteModelFiles(model.requiredModelDescriptor())
+                                        if (!container.modelStorage.hasUsableModel(model.requiredModelDescriptor())) {
+                                            container.modelDownloadRepository.enqueueIfNeeded(model.requiredModelDescriptor())
+                                        }
                                     }
-                                }
-                            },
-                            label = { Text(model.displayName) },
-                        )
+                                },
+                                label = { Text(model.displayName) },
+                            )
+                        }
                     }
-                }
-                Text(
-                    text = if (selectedCoachReady) {
-                        "${selectedCoachDescriptor.displayName} is ready on this device."
-                    } else if (selectedCoachDownloadState.isDownloading) {
-                        "Downloading ${selectedCoachDescriptor.displayName}... ${selectedCoachDownloadState.progressPercent ?: 0}%"
-                    } else {
-                        "${selectedCoachDescriptor.displayName} is not downloaded yet."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                selectedCoachDownloadState.errorMessage?.let { error ->
                     Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                if (coachModel != CoachModel.Gemma) {
-                    Text(
-                        text = "This model uses GGUF via llama.cpp for on-device chat. Tool-calling style meal edits remain stronger on the Gemma path.",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = if (selectedCoachReady) {
+                            "${selectedCoachDescriptor.displayName} is ready on this device."
+                        } else if (selectedCoachDownloadState.isDownloading) {
+                            "Downloading ${selectedCoachDescriptor.displayName}... ${selectedCoachDownloadState.progressPercent ?: 0}%"
+                        } else {
+                            "${selectedCoachDescriptor.displayName} is not downloaded yet."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                OutlinedButton(
-                    onClick = { container.modelDownloadRepository.enqueueIfNeeded(selectedCoachDescriptor) },
-                    enabled = !selectedCoachReady && !selectedCoachDownloadState.isDownloading,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        if (selectedCoachDownloadState.isDownloading) {
-                            "Downloading coach model..."
-                        } else {
-                            "Download selected coach model"
-                        },
-                    )
+                    selectedCoachDownloadState.errorMessage?.let { error ->
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (coachModel != CoachModel.Gemma) {
+                        Text(
+                            text = "This model uses GGUF via llama.cpp for on-device chat. Tool-calling style meal edits remain stronger on the Gemma path.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(
+                            text = "Gemma backend",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            GemmaBackend.entries.forEach { backend ->
+                                FilterChip(
+                                    selected = gemmaBackend == backend,
+                                    onClick = {
+                                        scope.launch {
+                                            container.preferences.setGemmaBackend(backend)
+                                        }
+                                    },
+                                    label = { Text(backend.displayName) },
+                                )
+                            }
+                        }
+                        Text(
+                            text = when (gemmaBackend) {
+                                GemmaBackend.CPU -> "CPU is slower, but it is the safer path on this device."
+                                GemmaBackend.GPU -> "GPU is faster when it works, but it can freeze or crash on unstable devices."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { container.modelDownloadRepository.enqueueIfNeeded(selectedCoachDescriptor) },
+                        enabled = !selectedCoachReady && !selectedCoachDownloadState.isDownloading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (selectedCoachDownloadState.isDownloading) {
+                                "Downloading coach model..."
+                            } else {
+                                "Download selected coach model"
+                            },
+                        )
+                    }
                 }
                 Text(
                     text = if (driveSyncState.isEnabled) {
@@ -514,6 +556,10 @@ fun ProfileEditScreen(
                     onClick = { showResetDialog = true },
                     enabled = !isResetting,
                     modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.16f),
+                    ),
                 ) {
                     Text(if (isResetting) "Resetting..." else "Reset app and restart onboarding")
                 }

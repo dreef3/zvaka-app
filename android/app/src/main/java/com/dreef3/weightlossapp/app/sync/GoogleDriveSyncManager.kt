@@ -18,7 +18,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -81,24 +80,28 @@ class GoogleDriveSyncManager(
     }
 
     suspend fun uploadBackup(accessToken: String, accountEmail: String?): DriveBackupMetadata = withContext(Dispatchers.IO) {
-        val backupBytes = ByteArrayOutputStream().use { buffer ->
-            backupManager.writeBackupArchive(buffer)
-            buffer.toByteArray()
+        val backupFile = File.createTempFile("drive-backup-", ".zip", context.cacheDir)
+        try {
+            backupFile.outputStream().use { output ->
+                backupManager.writeBackupArchive(output)
+            }
+
+            val existingFileId = preferences.readDriveSyncState().backupFileId ?: findExistingBackupFileId(accessToken)
+            val fileId = uploadMultipart(
+                accessToken = accessToken,
+                backupFile = backupFile,
+                existingFileId = existingFileId,
+            )
+
+            preferences.recordDriveSyncSuccess(
+                syncedAtEpochMs = System.currentTimeMillis(),
+                backupFileId = fileId,
+                accountEmail = accountEmail,
+            )
+            DriveBackupMetadata(fileId = fileId)
+        } finally {
+            backupFile.delete()
         }
-
-        val existingFileId = preferences.readDriveSyncState().backupFileId ?: findExistingBackupFileId(accessToken)
-        val fileId = uploadMultipart(
-            accessToken = accessToken,
-            backupBytes = backupBytes,
-            existingFileId = existingFileId,
-        )
-
-        preferences.recordDriveSyncSuccess(
-            syncedAtEpochMs = System.currentTimeMillis(),
-            backupFileId = fileId,
-            accountEmail = accountEmail,
-        )
-        DriveBackupMetadata(fileId = fileId)
     }
 
     suspend fun restoreBackup(accessToken: String): RestoreSummary = withContext(Dispatchers.IO) {
@@ -170,7 +173,7 @@ class GoogleDriveSyncManager(
 
     private suspend fun uploadMultipart(
         accessToken: String,
-        backupBytes: ByteArray,
+        backupFile: File,
         existingFileId: String?,
     ): String = withContext(Dispatchers.IO) {
         val boundary = "drive-sync-${System.currentTimeMillis()}"
@@ -189,11 +192,6 @@ class GoogleDriveSyncManager(
             append("Content-Type: ").append(ZIP_MIME_TYPE).append("\r\n\r\n")
         }.toByteArray(Charsets.UTF_8)
         val bodySuffix = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
-        val requestBody = ByteArray(bodyPrefix.size + backupBytes.size + bodySuffix.size).also { bytes ->
-            System.arraycopy(bodyPrefix, 0, bytes, 0, bodyPrefix.size)
-            System.arraycopy(backupBytes, 0, bytes, bodyPrefix.size, backupBytes.size)
-            System.arraycopy(bodySuffix, 0, bytes, bodyPrefix.size + backupBytes.size, bodySuffix.size)
-        }
 
         val endpoint = if (existingFileId == null) {
             "$DRIVE_UPLOAD_ENDPOINT?uploadType=multipart"
@@ -201,13 +199,22 @@ class GoogleDriveSyncManager(
             "$DRIVE_UPLOAD_ENDPOINT/$existingFileId?uploadType=multipart"
         }
         val method = if (existingFileId == null) "POST" else "PATCH"
-        val connection = openConnection(
+        val contentLength = bodyPrefix.size.toLong() + backupFile.length() + bodySuffix.size.toLong()
+        val connection = prepareConnection(
             url = endpoint,
             accessToken = accessToken,
             method = method,
             contentType = "multipart/related; boundary=$boundary",
-            body = requestBody,
-        )
+        ).apply {
+            doOutput = true
+            setFixedLengthStreamingMode(contentLength)
+            outputStream.use { output ->
+                output.write(bodyPrefix)
+                backupFile.inputStream().use { input -> input.copyTo(output) }
+                output.write(bodySuffix)
+            }
+        }
+        validateResponse(connection)
         val response = connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
         JSONObject(response).getString("id")
     }
@@ -217,9 +224,24 @@ class GoogleDriveSyncManager(
         accessToken: String,
         method: String,
         contentType: String? = null,
-        body: ByteArray? = null,
     ): HttpURLConnection {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+        val connection = prepareConnection(
+            url = url,
+            accessToken = accessToken,
+            method = method,
+            contentType = contentType,
+        )
+        validateResponse(connection)
+        return connection
+    }
+
+    private fun prepareConnection(
+        url: String,
+        accessToken: String,
+        method: String,
+        contentType: String? = null,
+    ): HttpURLConnection =
+        (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             setRequestProperty("Authorization", "Bearer $accessToken")
             setRequestProperty("Accept", "application/json")
@@ -227,17 +249,14 @@ class GoogleDriveSyncManager(
                 setRequestProperty("Content-Type", contentType)
             }
             doInput = true
-            if (body != null) {
-                doOutput = true
-                outputStream.use { output -> output.write(body) }
-            }
         }
+
+    private fun validateResponse(connection: HttpURLConnection) {
         val responseCode = connection.responseCode
         if (responseCode !in 200..299) {
             val errorBody = connection.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) }
             throw IllegalStateException("Drive API error $responseCode${errorBody?.let { ": $it" } ?: ""}")
         }
-        return connection
     }
 
     private fun AuthorizationResult.toOutcome(fallbackEmail: String?): DriveAuthorizationOutcome {
