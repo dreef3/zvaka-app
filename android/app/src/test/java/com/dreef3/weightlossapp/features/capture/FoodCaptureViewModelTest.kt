@@ -218,9 +218,16 @@ class FoodCaptureViewModelTest {
     private suspend fun preferences(
         model: CalorieEstimationModel = CalorieEstimationModel.Gemma,
     ): AppPreferences {
-        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        val preferences = AppPreferences(
+            context = ApplicationProvider.getApplicationContext(),
+            dataStoreName = "test-capture-prefs-${System.nanoTime()}",
+        )
         preferences.reset()
+        if (model == CalorieEstimationModel.Gemma) {
+            preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
+        }
         preferences.setCalorieEstimationModel(model)
+        preferences.readCalorieEstimationModel()
         return preferences
     }
 }

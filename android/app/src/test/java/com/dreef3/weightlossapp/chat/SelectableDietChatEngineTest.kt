@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 class SelectableDietChatEngineTest {
     @Test
     fun usesGemmaEngineWhenGemmaSelected() = runBlocking {
-        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        val preferences = testPreferences()
         preferences.reset()
         preferences.setCoachModel(CoachModel.Gemma)
         val engine = SelectableDietChatEngine(
@@ -33,7 +33,7 @@ class SelectableDietChatEngineTest {
 
     @Test
     fun usesSmolLmEngineWhenSmolLmSelected() = runBlocking {
-        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        val preferences = testPreferences()
         preferences.reset()
         preferences.setCoachModel(CoachModel.SmolLm)
         val engine = SelectableDietChatEngine(
@@ -54,7 +54,7 @@ class SelectableDietChatEngineTest {
 
     @Test
     fun usesQwen2bEngineWhenQwen2bSelected() = runBlocking {
-        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        val preferences = testPreferences()
         preferences.reset()
         preferences.setCoachModel(CoachModel.Qwen2b)
         val engine = SelectableDietChatEngine(
@@ -79,6 +79,17 @@ class SelectableDietChatEngineTest {
         todayRemainingCalories = null,
         entries = emptyList(),
     )
+
+    private fun testPreferences(): AppPreferences = AppPreferences(
+        context = ApplicationProvider.getApplicationContext(),
+        dataStoreName = "test-chat-prefs-${System.nanoTime()}",
+    ).also { preferences ->
+        runBlocking {
+            preferences.reset()
+            preferences.setCoachModel(CoachModel.SmolLm)
+            preferences.readCoachModel()
+        }
+    }
 
     private class FakeDietChatEngine(
         private val response: String,
