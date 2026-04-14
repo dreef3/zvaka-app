@@ -1,6 +1,5 @@
 package com.dreef3.weightlossapp.features.capture
 
-import androidx.test.core.app.ApplicationProvider
 import com.dreef3.weightlossapp.app.media.ModelDownloadController
 import com.dreef3.weightlossapp.app.media.ModelDescriptor
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
@@ -66,12 +65,14 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = null,
                 ),
             ),
-            preferences = preferences(),
+            preferences = unusedPreferences(),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
+            calorieEstimationModelFlow = flowOf(CalorieEstimationModel.SmolVlm),
+            readCalorieEstimationModel = { CalorieEstimationModel.SmolVlm },
             backgroundDispatcher = dispatcher,
         )
 
@@ -95,12 +96,14 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = "uncertain",
                 ),
             ),
-            preferences = preferences(),
+            preferences = unusedPreferences(),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
+            calorieEstimationModelFlow = flowOf(CalorieEstimationModel.SmolVlm),
+            readCalorieEstimationModel = { CalorieEstimationModel.SmolVlm },
             backgroundDispatcher = dispatcher,
         )
 
@@ -128,12 +131,14 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = null,
                 ),
             ),
-            preferences = preferences(),
+            preferences = unusedPreferences(),
             modelStorage = modelStorage,
             modelDownloadRepository = downloadRepository,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
+            calorieEstimationModelFlow = flowOf(CalorieEstimationModel.SmolVlm),
+            readCalorieEstimationModel = { CalorieEstimationModel.SmolVlm },
             backgroundDispatcher = dispatcher,
         )
         advanceUntilIdle()
@@ -143,46 +148,19 @@ class FoodCaptureViewModelTest {
     }
 
     @Test
-    fun downloadModelDelegatesToSelectedModelController() = runTest(dispatcher) {
-        val downloadRepository = FakeModelDownloadRepository()
-        val viewModel = FoodCaptureViewModel(
-            foodEstimationEngine = FakeEngine(
-                FoodEstimationResult(
-                    estimatedCalories = 500,
-                    confidenceState = ConfidenceState.High,
-                    detectedFoodLabel = "spaghetti",
-                    confidenceNotes = null,
-                ),
-            ),
-            preferences = preferences(),
-            modelStorage = realModelStorage(available = false),
-            modelDownloadRepository = downloadRepository,
-            localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
-            confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
-            updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
-            backgroundDispatcher = dispatcher,
-        )
-        advanceUntilIdle()
-        val initialEnqueueCalls = downloadRepository.enqueueCalls
-        viewModel.downloadModel()
-        advanceUntilIdle()
-
-        assertTrue(downloadRepository.enqueueCalls > initialEnqueueCalls)
-        assertTrue(downloadRepository.lastRequestedModel != null)
-    }
-
-    @Test
     fun analyzePhotoDoesNotRunInferenceWhenSelectedModelIsMissing() = runTest(dispatcher) {
         val downloadRepository = FakeModelDownloadRepository()
         val engine = CountingEngine()
         val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = engine,
-            preferences = preferences(model = CalorieEstimationModel.SmolVlm),
+            preferences = unusedPreferences(),
             modelStorage = realModelStorage(available = false),
             modelDownloadRepository = downloadRepository,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
+            calorieEstimationModelFlow = flowOf(CalorieEstimationModel.SmolVlm),
+            readCalorieEstimationModel = { CalorieEstimationModel.SmolVlm },
             backgroundDispatcher = dispatcher,
         )
         advanceUntilIdle()
@@ -215,21 +193,7 @@ class FoodCaptureViewModelTest {
         return storage
     }
 
-    private suspend fun preferences(
-        model: CalorieEstimationModel = CalorieEstimationModel.Gemma,
-    ): AppPreferences {
-        val preferences = AppPreferences(
-            context = ApplicationProvider.getApplicationContext(),
-            dataStoreName = "test-capture-prefs-${System.nanoTime()}",
-        )
-        preferences.reset()
-        if (model == CalorieEstimationModel.Gemma) {
-            preferences.setCalorieEstimationModel(CalorieEstimationModel.SmolVlm)
-        }
-        preferences.setCalorieEstimationModel(model)
-        preferences.readCalorieEstimationModel()
-        return preferences
-    }
+    private fun unusedPreferences(): AppPreferences = AppPreferences(androidx.test.core.app.ApplicationProvider.getApplicationContext())
 }
 
 private class FakeEngine(

@@ -46,6 +46,8 @@ class FoodCaptureViewModel(
     private val localDateProvider: LocalDateProvider,
     private val confirmFoodEstimateUseCase: ConfirmFoodEstimateUseCase,
     private val updateFoodEntryUseCase: UpdateFoodEntryUseCase,
+    private val calorieEstimationModelFlow: Flow<CalorieEstimationModel> = preferences.calorieEstimationModel,
+    private val readCalorieEstimationModel: suspend () -> CalorieEstimationModel = { preferences.readCalorieEstimationModel() },
     private val backgroundDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private var activeModelDescriptor: ModelDescriptor = ModelDescriptors.gemma
@@ -63,7 +65,7 @@ class FoodCaptureViewModel(
 
     init {
         viewModelScope.launch {
-            preferences.calorieEstimationModel.flatMapLatest { model ->
+            calorieEstimationModelFlow.flatMapLatest { model ->
                 activeModelDescriptor = model.primaryModelDescriptor()
                 model.requiredModelDescriptors().forEach { descriptor ->
                     modelStorage.cleanupIncompleteModelFiles(descriptor)
@@ -73,7 +75,7 @@ class FoodCaptureViewModel(
                 }
                 observeDownloadState(model)
             }.collect { state ->
-                val selectedModel = preferences.readCalorieEstimationModel()
+                val selectedModel = readCalorieEstimationModel()
                 val modelAvailable = selectedModel.requiredModelDescriptors().all(modelStorage::hasUsableModel)
                 _uiState.update { current ->
                     current.copy(
@@ -96,7 +98,7 @@ class FoodCaptureViewModel(
 
     fun downloadModel() {
         viewModelScope.launch {
-            preferences.readCalorieEstimationModel().requiredModelDescriptors().forEach(modelDownloadRepository::enqueueIfNeeded)
+            readCalorieEstimationModel().requiredModelDescriptors().forEach(modelDownloadRepository::enqueueIfNeeded)
         }
     }
 
@@ -105,7 +107,7 @@ class FoodCaptureViewModel(
         pendingImagePath = imagePath
 
         viewModelScope.launch(backgroundDispatcher) {
-            val selectedModel = preferences.readCalorieEstimationModel()
+            val selectedModel = readCalorieEstimationModel()
             val requiredDescriptors = selectedModel.requiredModelDescriptors()
             val modelAvailable = requiredDescriptors.all(modelStorage::hasUsableModel)
             if (!modelAvailable) {
