@@ -3,6 +3,27 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+import java.util.Properties
+
+fun Project.findAndroidSdkDir(): File? {
+    val fromEnv = providers.environmentVariable("ANDROID_SDK_ROOT").orNull
+        ?: providers.environmentVariable("ANDROID_HOME").orNull
+    if (!fromEnv.isNullOrBlank()) return file(fromEnv)
+
+    val localProperties = rootProject.file("local.properties")
+    if (!localProperties.exists()) return null
+
+    val properties = Properties().apply {
+        localProperties.inputStream().use(::load)
+    }
+    val sdkDir = properties.getProperty("sdk.dir")?.takeIf { it.isNotBlank() } ?: return null
+    return file(sdkDir)
+}
+
+val androidSdkDir = project.findAndroidSdkDir()
+val cmakeNinja = androidSdkDir?.resolve("cmake/3.22.1/bin/ninja")
+val vulkanGlslc = androidSdkDir?.resolve("ndk/29.0.13113456/shader-tools/linux-x86_64/glslc")
+
 android {
     namespace = "com.arm.aichat"
     compileSdk = 35
@@ -23,7 +44,9 @@ android {
                 arguments += "-DCMAKE_BUILD_TYPE=Release"
                 arguments += "-DCMAKE_MESSAGE_LOG_LEVEL=DEBUG"
                 arguments += "-DCMAKE_VERBOSE_MAKEFILE=ON"
-                arguments += "-DCMAKE_MAKE_PROGRAM=/home/ae/android-sdk/cmake/3.22.1/bin/ninja"
+                if (cmakeNinja?.exists() == true) {
+                    arguments += "-DCMAKE_MAKE_PROGRAM=${cmakeNinja.absolutePath}"
+                }
                 targets += "ai-chat"
 
                 arguments += "-DBUILD_SHARED_LIBS=ON"
@@ -35,7 +58,9 @@ android {
                 arguments += "-DGGML_CPU_ALL_VARIANTS=OFF"
                 arguments += "-DGGML_LLAMAFILE=OFF"
                 arguments += "-DGGML_VULKAN=ON"
-                arguments += "-DVulkan_GLSLC_EXECUTABLE=/home/ae/android-sdk/ndk/29.0.13113456/shader-tools/linux-x86_64/glslc"
+                if (vulkanGlslc?.exists() == true) {
+                    arguments += "-DVulkan_GLSLC_EXECUTABLE=${vulkanGlslc.absolutePath}"
+                }
             }
         }
         aarMetadata {
