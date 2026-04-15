@@ -5,7 +5,9 @@ enum class CalorieEstimationModel(
     val displayName: String,
 ) {
     Gemma("gemma", "Gemma"),
-    SmolVlm("smolvlm", "SmolVLM");
+    SmolVlm("smolvlm", "SmolVLM"),
+    Qwen0_8b("qwen-0.8b", "Qwen 0.8B"),
+    Qwen2b("qwen-2b", "Qwen 2B");
 
     companion object {
         fun fromStorageKey(value: String?): CalorieEstimationModel =

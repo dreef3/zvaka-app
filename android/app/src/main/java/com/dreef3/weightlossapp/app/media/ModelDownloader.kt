@@ -80,7 +80,8 @@ open class ModelDownloader(
                 destination.delete()
             }
             if (!tempFile.renameTo(destination)) {
-                throw IllegalStateException("Could not move temp model file into place")
+                tempFile.copyTo(destination, overwrite = true)
+                tempFile.delete()
             }
 
             if (BuildConfig.ENABLE_VERBOSE_LOGGING) {

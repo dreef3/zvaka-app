@@ -5,7 +5,10 @@ import com.dreef3.weightlossapp.BuildConfig
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.network.NetworkConnectionType
-import com.dreef3.weightlossapp.inference.CalorieEstimationModel
+import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
+import com.dreef3.weightlossapp.chat.requiredModelDescriptor
+import com.dreef3.weightlossapp.inference.requiredModelDescriptors
+import java.time.Instant
 import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -23,9 +26,21 @@ object AppInitializer {
                 container.photoStorage.ensureDirectories()
                 container.modelStorage.modelDirectory.mkdirs()
                 container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.gemma)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.smolLm)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.smolLm2)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.qwen0_8b)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.qwen2b)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.qwen0_8b)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.qwen0_8bMmproj)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.qwen2b)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.qwen2bMmproj)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.smolVlm)
+                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.smolVlmMmproj)
+                recoverStalePhotoProcessingEntries(container)
                 container.modelStorage.logState(tag = TAG, model = ModelDescriptors.gemma)
-                runBlocking { container.preferences.setCalorieEstimationModel(CalorieEstimationModel.Gemma) }
                 val driveSyncEnabled = runBlocking { container.preferences.readDriveSyncState().isEnabled }
+                val selectedCoachModel = runBlocking { container.preferences.readCoachModel() }
+                val selectedCalorieModel = runBlocking { container.preferences.readCalorieEstimationModel() }
                 if (driveSyncEnabled) {
                     container.driveSyncScheduler.enablePeriodicSync()
                 } else {
@@ -33,11 +48,17 @@ object AppInitializer {
                 }
                 val onboardingComplete = runBlocking { container.preferences.hasCompletedOnboarding.first() }
                 if (onboardingComplete &&
-                    !container.modelStorage.hasUsableModel(ModelDescriptors.gemma) &&
                     container.networkConnectionMonitor.currentConnectionType() == NetworkConnectionType.Wifi
                 ) {
-                    container.modelDownloadRepository.enqueueIfNeeded(ModelDescriptors.gemma)
-                    debugLog("Scheduled Gemma background download on Wi-Fi")
+                    if (!container.modelStorage.hasUsableModel(selectedCoachModel.requiredModelDescriptor())) {
+                        container.modelDownloadRepository.enqueueIfNeeded(selectedCoachModel.requiredModelDescriptor())
+                        debugLog("Scheduled ${selectedCoachModel.displayName} background download on Wi-Fi")
+                    }
+                    selectedCalorieModel.requiredModelDescriptors().forEach { descriptor ->
+                        if (!container.modelStorage.hasUsableModel(descriptor)) {
+                            container.modelDownloadRepository.enqueueIfNeeded(descriptor)
+                        }
+                    }
                 }
                 if (!container.modelStorage.hasUsableModel(ModelDescriptors.gemma)) {
                     debugLog("Skipped model warm-up because Gemma is not ready yet")
@@ -54,5 +75,33 @@ object AppInitializer {
         }
     }
 
+    private fun recoverStalePhotoProcessingEntries(container: AppContainer) {
+        val cutoffEpochMs = Instant.now().minusSeconds(STALE_PROCESSING_TIMEOUT_SECONDS).toEpochMilli()
+        val foodEntryDao = container.database.foodEntryDao()
+        runBlocking {
+            val staleEntries = foodEntryDao.getAll().filter { entry ->
+                entry.entryStatus == FoodEntryStatus.Processing.name &&
+                    entry.deletedAtEpochMs == null &&
+                    entry.capturedAtEpochMs < cutoffEpochMs
+            }
+            staleEntries.forEach { entry ->
+                foodEntryDao.update(
+                    entry.copy(
+                        estimatedCalories = 0,
+                        finalCalories = 0,
+                        confidenceState = "Failed",
+                        detectedFoodLabel = null,
+                        confidenceNotes = "Photo saved. Background processing stopped before finishing, so calories need manual entry.",
+                        entryStatus = FoodEntryStatus.NeedsManual.name,
+                    ),
+                )
+            }
+            if (staleEntries.isNotEmpty()) {
+                debugLog("Recovered ${staleEntries.size} stale processing photo entries")
+            }
+        }
+    }
+
     private const val TAG = "AppInitializer"
+    private const val STALE_PROCESSING_TIMEOUT_SECONDS = 180L
 }

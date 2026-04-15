@@ -1,9 +1,13 @@
 package com.dreef3.weightlossapp.app.di
 
 import android.content.Context
+import com.dreef3.weightlossapp.app.media.ModelDescriptors
+import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.chat.DietChatEngine
 import com.dreef3.weightlossapp.chat.DietEntryCorrectionService
+import com.dreef3.weightlossapp.chat.LlamaCppDietChatEngine
 import com.dreef3.weightlossapp.chat.LiteRtDietChatEngine
+import com.dreef3.weightlossapp.chat.SelectableDietChatEngine
 import com.dreef3.weightlossapp.app.media.ModelDownloadRepository
 import com.dreef3.weightlossapp.app.media.ModelDownloader
 import com.dreef3.weightlossapp.app.media.ModelStorage
@@ -29,10 +33,14 @@ import com.dreef3.weightlossapp.domain.usecase.ConfirmFoodEstimateUseCase
 import com.dreef3.weightlossapp.domain.usecase.SaveManualCaloriesUseCase
 import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileUseCase
 import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
+import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import com.dreef3.weightlossapp.inference.FoodEstimationEngine
+import com.dreef3.weightlossapp.inference.LlamaCppMultimodalFoodEstimationEngine
+import com.dreef3.weightlossapp.inference.LlamaCppSmolVlmFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.LiteRtFoodEstimationEngine
-import com.dreef3.weightlossapp.inference.SmolVlmFoodEstimationEngine
+import com.dreef3.weightlossapp.inference.SelectableFoodEstimationEngine
 import com.dreef3.weightlossapp.work.WorkManagerPhotoProcessingScheduler
+
 class AppContainer private constructor(context: Context) {
     val appContext: Context = context
     val database = AppDatabase.build(context)
@@ -91,14 +99,65 @@ class AppContainer private constructor(context: Context) {
     val gemmaFoodEstimationEngine: FoodEstimationEngine = LiteRtFoodEstimationEngine(
         modelFile = modelStorage.defaultModelFile,
     )
-    val smolVlmFoodEstimationEngine: FoodEstimationEngine = SmolVlmFoodEstimationEngine(
+    val smolVlmFoodEstimationEngine: FoodEstimationEngine = LlamaCppSmolVlmFoodEstimationEngine(
         context = context,
-        modelFile = modelStorage.fileFor(com.dreef3.weightlossapp.app.media.ModelDescriptors.smolVlm),
+        modelStorage = modelStorage,
     )
-    val foodEstimationEngine: FoodEstimationEngine = gemmaFoodEstimationEngine
-    val dietChatEngine: DietChatEngine = LiteRtDietChatEngine(
+    val qwen0_8bFoodEstimationEngine: FoodEstimationEngine = LlamaCppMultimodalFoodEstimationEngine(
+        context = context,
+        modelStorage = modelStorage,
+        modelDescriptor = ModelDescriptors.qwen0_8b,
+        mmprojDescriptor = ModelDescriptors.qwen0_8bMmproj,
+    )
+    val qwen2bFoodEstimationEngine: FoodEstimationEngine = LlamaCppMultimodalFoodEstimationEngine(
+        context = context,
+        modelStorage = modelStorage,
+        modelDescriptor = ModelDescriptors.qwen2b,
+        mmprojDescriptor = ModelDescriptors.qwen2bMmproj,
+    )
+    val foodEstimationEngine: FoodEstimationEngine = SelectableFoodEstimationEngine(
+        preferences = preferences,
+        gemmaEngine = gemmaFoodEstimationEngine,
+        multimodalEngines = mapOf(
+            CalorieEstimationModel.SmolVlm to smolVlmFoodEstimationEngine,
+            CalorieEstimationModel.Qwen0_8b to qwen0_8bFoodEstimationEngine,
+            CalorieEstimationModel.Qwen2b to qwen2bFoodEstimationEngine,
+        ),
+    )
+    val gemmaDietChatEngine: DietChatEngine = LiteRtDietChatEngine(
         modelFile = modelStorage.defaultModelFile,
         correctionService = dietEntryCorrectionService,
+        backendPreferenceProvider = preferences::readGemmaBackend,
+    )
+    private val smolLmDietChatEngine: DietChatEngine = LlamaCppDietChatEngine(
+        container = this,
+        modelStorage = modelStorage,
+        modelDescriptor = ModelDescriptors.smolLm,
+    )
+    private val smolLm2DietChatEngine: DietChatEngine = LlamaCppDietChatEngine(
+        container = this,
+        modelStorage = modelStorage,
+        modelDescriptor = ModelDescriptors.smolLm2,
+    )
+    private val qwen0_8bDietChatEngine: DietChatEngine = LlamaCppDietChatEngine(
+        container = this,
+        modelStorage = modelStorage,
+        modelDescriptor = ModelDescriptors.qwen0_8b,
+    )
+    private val qwen2bDietChatEngine: DietChatEngine = LlamaCppDietChatEngine(
+        container = this,
+        modelStorage = modelStorage,
+        modelDescriptor = ModelDescriptors.qwen2b,
+    )
+    val dietChatEngine: DietChatEngine = SelectableDietChatEngine(
+        preferences = preferences,
+        gemmaEngine = gemmaDietChatEngine,
+        llamaCppEngines = mapOf(
+            CoachModel.SmolLm to smolLmDietChatEngine,
+            CoachModel.SmolLm2 to smolLm2DietChatEngine,
+            CoachModel.Qwen0_8b to qwen0_8bDietChatEngine,
+            CoachModel.Qwen2b to qwen2bDietChatEngine,
+        ),
     )
 
     companion object {

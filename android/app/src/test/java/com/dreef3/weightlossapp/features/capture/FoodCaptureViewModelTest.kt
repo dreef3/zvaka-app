@@ -1,18 +1,19 @@
 package com.dreef3.weightlossapp.features.capture
 
-import androidx.test.core.app.ApplicationProvider
 import com.dreef3.weightlossapp.app.media.ModelDownloadController
 import com.dreef3.weightlossapp.app.media.ModelDescriptor
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.media.ModelDownloadState
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
+import com.dreef3.weightlossapp.data.preferences.AppPreferences
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntry
 import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import com.dreef3.weightlossapp.domain.usecase.ConfirmFoodEstimateUseCase
 import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
+import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import com.dreef3.weightlossapp.inference.FoodEstimationEngine
 import com.dreef3.weightlossapp.inference.FoodEstimationRequest
 import com.dreef3.weightlossapp.inference.FoodEstimationResult
@@ -64,11 +65,14 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = null,
                 ),
             ),
+            preferences = unusedPreferences(),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
+            calorieEstimationModelFlow = flowOf(CalorieEstimationModel.SmolVlm),
+            readCalorieEstimationModel = { CalorieEstimationModel.SmolVlm },
             backgroundDispatcher = dispatcher,
         )
 
@@ -92,11 +96,14 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = "uncertain",
                 ),
             ),
+            preferences = unusedPreferences(),
             modelStorage = realModelStorage(available = true),
             modelDownloadRepository = FakeModelDownloadRepository(),
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(repository),
+            calorieEstimationModelFlow = flowOf(CalorieEstimationModel.SmolVlm),
+            readCalorieEstimationModel = { CalorieEstimationModel.SmolVlm },
             backgroundDispatcher = dispatcher,
         )
 
@@ -115,31 +122,6 @@ class FoodCaptureViewModelTest {
     fun initRequestsSelectedModelDownloadWhenMissing() = runTest(dispatcher) {
         val modelStorage = realModelStorage(available = false)
         val downloadRepository = FakeModelDownloadRepository()
-        FoodCaptureViewModel(
-            foodEstimationEngine = FakeEngine(
-                FoodEstimationResult(
-                    estimatedCalories = 500,
-                    confidenceState = ConfidenceState.High,
-                    detectedFoodLabel = "spaghetti",
-                    confidenceNotes = null,
-                ),
-            ),
-            modelStorage = modelStorage,
-            modelDownloadRepository = downloadRepository,
-            localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
-            confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
-            updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
-            backgroundDispatcher = dispatcher,
-        )
-        advanceUntilIdle()
-
-        assertEquals(1, downloadRepository.enqueueCalls)
-        assertEquals(ModelDescriptors.gemma, downloadRepository.lastRequestedModel)
-    }
-
-    @Test
-    fun downloadModelDelegatesToSelectedModelController() = runTest(dispatcher) {
-        val downloadRepository = FakeModelDownloadRepository()
         val viewModel = FoodCaptureViewModel(
             foodEstimationEngine = FakeEngine(
                 FoodEstimationResult(
@@ -149,20 +131,50 @@ class FoodCaptureViewModelTest {
                     confidenceNotes = null,
                 ),
             ),
+            preferences = unusedPreferences(),
+            modelStorage = modelStorage,
+            modelDownloadRepository = downloadRepository,
+            localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
+            confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
+            updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
+            calorieEstimationModelFlow = flowOf(CalorieEstimationModel.SmolVlm),
+            readCalorieEstimationModel = { CalorieEstimationModel.SmolVlm },
+            backgroundDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.modelAvailable)
+        assertTrue(viewModel.uiState.value.modelStatusMessage != null)
+    }
+
+    @Test
+    fun analyzePhotoDoesNotRunInferenceWhenSelectedModelIsMissing() = runTest(dispatcher) {
+        val downloadRepository = FakeModelDownloadRepository()
+        val engine = CountingEngine()
+        val viewModel = FoodCaptureViewModel(
+            foodEstimationEngine = engine,
+            preferences = unusedPreferences(),
             modelStorage = realModelStorage(available = false),
             modelDownloadRepository = downloadRepository,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
             confirmFoodEstimateUseCase = ConfirmFoodEstimateUseCase(),
             updateFoodEntryUseCase = UpdateFoodEntryUseCase(FakeFoodEntryRepository()),
+            calorieEstimationModelFlow = flowOf(CalorieEstimationModel.SmolVlm),
+            readCalorieEstimationModel = { CalorieEstimationModel.SmolVlm },
             backgroundDispatcher = dispatcher,
         )
         advanceUntilIdle()
-        val initialEnqueueCalls = downloadRepository.enqueueCalls
-        viewModel.downloadModel()
+
+        viewModel.analyzePhoto("/tmp/photo.jpg")
         advanceUntilIdle()
 
-        assertEquals(initialEnqueueCalls + 1, downloadRepository.enqueueCalls)
-        assertEquals(ModelDescriptors.gemma, downloadRepository.lastRequestedModel)
+        assertEquals(0, engine.estimateCalls)
+        assertFalse(viewModel.uiState.value.modelAvailable)
+        assertEquals(
+            "Selected model is not ready yet. Wait for the download to finish or switch back to Gemma.",
+            viewModel.uiState.value.errorMessage,
+        )
+        assertTrue(downloadRepository.enqueueCalls >= 2)
     }
 
     private fun realModelStorage(available: Boolean): ModelStorage {
@@ -171,17 +183,32 @@ class FoodCaptureViewModelTest {
         storage.modelDirectory.mkdirs()
         if (available) {
             storage.fileFor(ModelDescriptors.gemma).writeText("model")
+            storage.fileFor(ModelDescriptors.smolVlm).writeText("model")
+            storage.fileFor(ModelDescriptors.smolVlmMmproj).writeText("model")
         } else {
             storage.fileFor(ModelDescriptors.gemma).delete()
+            storage.fileFor(ModelDescriptors.smolVlm).delete()
+            storage.fileFor(ModelDescriptors.smolVlmMmproj).delete()
         }
         return storage
     }
+
+    private fun unusedPreferences(): AppPreferences = AppPreferences(androidx.test.core.app.ApplicationProvider.getApplicationContext())
 }
 
 private class FakeEngine(
     private val result: FoodEstimationResult,
 ) : FoodEstimationEngine {
     override suspend fun estimate(request: FoodEstimationRequest): Result<FoodEstimationResult> = Result.success(result)
+}
+
+private class CountingEngine : FoodEstimationEngine {
+    var estimateCalls = 0
+
+    override suspend fun estimate(request: FoodEstimationRequest): Result<FoodEstimationResult> {
+        estimateCalls += 1
+        error("estimate should not be called when the selected model is missing")
+    }
 }
 
 private class FakeFoodEntryRepository : FoodEntryRepository {

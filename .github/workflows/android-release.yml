@@ -40,6 +40,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+          submodules: recursive
 
       - name: Compute release version
         id: version

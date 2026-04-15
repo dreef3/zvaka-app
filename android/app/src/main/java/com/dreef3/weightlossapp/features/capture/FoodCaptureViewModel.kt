@@ -9,6 +9,7 @@ import com.dreef3.weightlossapp.app.media.ModelDownloadController
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
+import com.dreef3.weightlossapp.data.preferences.AppPreferences
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntry
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
@@ -19,22 +20,34 @@ import com.dreef3.weightlossapp.inference.FoodEstimationException
 import com.dreef3.weightlossapp.inference.FoodEstimationEngine
 import com.dreef3.weightlossapp.inference.FoodEstimationRequest
 import com.dreef3.weightlossapp.inference.FoodEstimationResult
+import com.dreef3.weightlossapp.inference.CalorieEstimationModel
+import com.dreef3.weightlossapp.inference.primaryModelDescriptor
+import com.dreef3.weightlossapp.inference.requiredModelDescriptors
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class FoodCaptureViewModel(
     private val foodEstimationEngine: FoodEstimationEngine,
+    private val preferences: AppPreferences,
     private val modelStorage: ModelStorage,
     private val modelDownloadRepository: ModelDownloadController,
     private val localDateProvider: LocalDateProvider,
     private val confirmFoodEstimateUseCase: ConfirmFoodEstimateUseCase,
     private val updateFoodEntryUseCase: UpdateFoodEntryUseCase,
+    private val calorieEstimationModelFlow: Flow<CalorieEstimationModel> = preferences.calorieEstimationModel,
+    private val readCalorieEstimationModel: suspend () -> CalorieEstimationModel = { preferences.readCalorieEstimationModel() },
     private val backgroundDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private var activeModelDescriptor: ModelDescriptor = ModelDescriptors.gemma
@@ -52,12 +65,18 @@ class FoodCaptureViewModel(
 
     init {
         viewModelScope.launch {
-            modelStorage.cleanupIncompleteModelFiles(activeModelDescriptor)
-            if (!modelStorage.hasUsableModel(activeModelDescriptor)) {
-                modelDownloadRepository.enqueueIfNeeded(activeModelDescriptor)
-            }
-            modelDownloadRepository.observeState(activeModelDescriptor).collect { state ->
-                val modelAvailable = modelStorage.hasUsableModel(activeModelDescriptor)
+            calorieEstimationModelFlow.flatMapLatest { model ->
+                activeModelDescriptor = model.primaryModelDescriptor()
+                model.requiredModelDescriptors().forEach { descriptor ->
+                    modelStorage.cleanupIncompleteModelFiles(descriptor)
+                    if (!modelStorage.hasUsableModel(descriptor)) {
+                        modelDownloadRepository.enqueueIfNeeded(descriptor)
+                    }
+                }
+                observeDownloadState(model)
+            }.collect { state ->
+                val selectedModel = readCalorieEstimationModel()
+                val modelAvailable = selectedModel.requiredModelDescriptors().all(modelStorage::hasUsableModel)
                 _uiState.update { current ->
                     current.copy(
                         isDownloadingModel = state.isDownloading,
@@ -79,28 +98,48 @@ class FoodCaptureViewModel(
 
     fun downloadModel() {
         viewModelScope.launch {
-            modelDownloadRepository.enqueueIfNeeded(activeModelDescriptor)
+            readCalorieEstimationModel().requiredModelDescriptors().forEach(modelDownloadRepository::enqueueIfNeeded)
         }
     }
 
     fun analyzePhoto(imagePath: String) {
-        val modelAvailable = modelStorage.hasUsableModel(activeModelDescriptor)
         val capturedAt = Instant.now()
         pendingImagePath = imagePath
-        _uiState.value = CaptureUiState(
-            imagePath = imagePath,
-            isLoading = true,
-            modelAvailable = modelAvailable,
-            modelStatusMessage = modelStatusMessage(
-                modelName = activeModelDescriptor.displayName,
-                modelAvailable = modelAvailable,
-                isDownloading = _uiState.value.isDownloadingModel,
-                progressPercent = _uiState.value.modelDownloadProgressPercent,
-                errorMessage = null,
-            ),
-        )
 
         viewModelScope.launch(backgroundDispatcher) {
+            val selectedModel = readCalorieEstimationModel()
+            val requiredDescriptors = selectedModel.requiredModelDescriptors()
+            val modelAvailable = requiredDescriptors.all(modelStorage::hasUsableModel)
+            if (!modelAvailable) {
+                requiredDescriptors.forEach(modelDownloadRepository::enqueueIfNeeded)
+                _uiState.value = CaptureUiState(
+                    imagePath = imagePath,
+                    modelAvailable = false,
+                    errorMessage = "Selected model is not ready yet. Wait for the download to finish or switch back to Gemma.",
+                    isDownloadingModel = true,
+                    modelStatusMessage = modelStatusMessage(
+                        modelName = activeModelDescriptor.displayName,
+                        modelAvailable = false,
+                        isDownloading = true,
+                        progressPercent = _uiState.value.modelDownloadProgressPercent,
+                        errorMessage = null,
+                    ),
+                    modelDownloadProgressPercent = _uiState.value.modelDownloadProgressPercent,
+                )
+                return@launch
+            }
+            _uiState.value = CaptureUiState(
+                imagePath = imagePath,
+                isLoading = true,
+                modelAvailable = modelAvailable,
+                modelStatusMessage = modelStatusMessage(
+                    modelName = activeModelDescriptor.displayName,
+                    modelAvailable = modelAvailable,
+                    isDownloading = _uiState.value.isDownloadingModel,
+                    progressPercent = _uiState.value.modelDownloadProgressPercent,
+                    errorMessage = null,
+                ),
+            )
             val result = foodEstimationEngine.estimate(
                 FoodEstimationRequest(
                     imagePath = imagePath,
@@ -239,6 +278,24 @@ class FoodCaptureViewModel(
         errorMessage != null -> "$modelName download failed."
         else -> "$modelName not installed yet."
     }
+
+    private fun observeDownloadState(model: CalorieEstimationModel): Flow<com.dreef3.weightlossapp.app.media.ModelDownloadState> {
+        val descriptors = model.requiredModelDescriptors()
+        val states = descriptors.map(modelDownloadRepository::observeState)
+        return combine(states) { stateArray ->
+            val values = stateArray.toList()
+            val totalBytes = values.sumOf { it.totalBytes }
+            val downloadedBytes = values.sumOf { it.downloadedBytes }
+            val progressPercent = if (totalBytes > 0L) ((downloadedBytes * 100L) / totalBytes).toInt() else null
+            com.dreef3.weightlossapp.app.media.ModelDownloadState(
+                isDownloading = values.any { it.isDownloading },
+                progressPercent = progressPercent,
+                downloadedBytes = downloadedBytes,
+                totalBytes = totalBytes,
+                errorMessage = values.firstNotNullOfOrNull { it.errorMessage },
+            )
+        }
+    }
 }
 
 class FoodCaptureViewModelFactory(
@@ -248,6 +305,7 @@ class FoodCaptureViewModelFactory(
         @Suppress("UNCHECKED_CAST")
         return FoodCaptureViewModel(
             foodEstimationEngine = container.foodEstimationEngine,
+            preferences = container.preferences,
             modelStorage = container.modelStorage,
             modelDownloadRepository = container.modelDownloadRepository,
             localDateProvider = container.localDateProvider,

@@ -2,6 +2,8 @@ package com.dreef3.weightlossapp.chat
 
 import android.util.Log
 import com.dreef3.weightlossapp.BuildConfig
+import com.dreef3.weightlossapp.data.preferences.GemmaBackend
+import com.dreef3.weightlossapp.data.preferences.GemmaBackendPreference
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
@@ -29,9 +31,11 @@ import kotlin.coroutines.resumeWithException
 class LiteRtDietChatEngine(
     private val modelFile: File,
     private val correctionService: DietEntryCorrectionService,
+    private val backendPreferenceProvider: suspend () -> GemmaBackend,
 ) : DietChatEngine {
     private val engineMutex = Mutex()
     private var engine: Engine? = null
+    private var enginePreference: GemmaBackendPreference? = null
 
     override suspend fun sendMessage(
         message: String,
@@ -69,20 +73,38 @@ class LiteRtDietChatEngine(
     }
 
     private suspend fun getOrCreateEngine(): Engine = engineMutex.withLock {
-        engine?.let { return it }
+        val desiredPreference = backendPreferenceProvider().toEnginePreference()
+        engine?.takeIf { enginePreference?.mode == desiredPreference.mode }?.let { return it }
+        if (engine != null && enginePreference?.mode != desiredPreference.mode) {
+            debugLog("closing existing engine for backend switch ${enginePreference?.label} -> ${desiredPreference.label}")
+            runCatching { engine?.close() }
+                .onFailure { Log.w(TAG, "Failed closing LiteRT coach engine during backend switch", it) }
+            engine = null
+            enginePreference = null
+        }
         debugLog("initializing engine modelPath=${modelFile.absolutePath} size=${modelFile.length()}")
         val engineConfig = EngineConfig(
             modelPath = modelFile.absolutePath,
-            backend = Backend.GPU(),
+            backend = desiredPreference.backend,
             visionBackend = null,
             audioBackend = null,
             maxNumTokens = 4000,
             cacheDir = null,
         )
-        return Engine(engineConfig).also { created ->
-            created.initialize()
-            engine = created
-            debugLog("engine initialized")
+        try {
+            Log.i(TAG, "Initializing LiteRT coach engine with backend=${desiredPreference.label}")
+            return Engine(engineConfig).also { created ->
+                created.initialize()
+                engine = created
+                enginePreference = desiredPreference
+                debugLog("engine initialized backend=${desiredPreference.label}")
+            }
+        } catch (exception: Exception) {
+            Log.e(TAG, "LiteRT coach engine initialization failed for backend=${desiredPreference.label}", exception)
+            throw IllegalStateException(
+                "Unable to initialize LiteRT coach engine with ${desiredPreference.mode.displayName}",
+                exception,
+            )
         }
     }
 
@@ -110,9 +132,13 @@ class LiteRtDietChatEngine(
                                 When the user corrects a saved meal, use tools to find the entry and
                                 call correctEntry instead of merely suggesting the change.
                                 When the user tells you about an unlogged meal and gives enough
-                                information to save it, call logFoodEntry instead of only replying
-                                in text. If calories are missing or ambiguous, ask a short follow-up
-                                question instead of guessing.
+                                 information to save it, call logFoodEntry instead of only replying
+                                 in text. If calories are missing or ambiguous, first attempt to
+                                 estimate them using the meal description and the trusted context
+                                 (recent entries, typical portion sizes, etc.). Do not ask the
+                                 user for calories up-front; only ask a brief clarifying
+                                 question if a reasonable estimate cannot be made or the
+                                 confidence would be low.
                                 The meal name in the user's own message is already a complete
                                 value for logFoodEntry.mealName. Do not ask for a separate,
                                 clearer, or more specific description when the user already named
@@ -120,9 +146,11 @@ class LiteRtDietChatEngine(
                                 'yogurt with berries'.
                                 If the user gives both a meal name and calories, call
                                 logFoodEntry immediately.
-                                If the user asks you to estimate calories for a named meal in text,
-                                estimate them first, then call logFoodEntry with that same
-                                user-provided meal name. Do not ask for another description.
+                                 If the user asks you to estimate calories for a named meal in text,
+                                 estimate them first, then call logFoodEntry with that same
+                                 user-provided meal name. When the user mentions an unlogged meal
+                                 without providing calories, assume they want it logged and try an
+                                 automatic estimation before asking for numbers.
                                 If you need to save the meal, prefer tools over plain text.
                                 Examples:
                                 User: "I had Mac Menu, 950 kcal."
@@ -231,5 +259,10 @@ class LiteRtDietChatEngine(
         if (BuildConfig.DEBUG) {
             Log.d(TAG, message)
         }
+    }
+
+    private fun GemmaBackend.toEnginePreference(): GemmaBackendPreference = when (this) {
+        GemmaBackend.CPU -> GemmaBackendPreference(mode = this, backend = Backend.CPU())
+        GemmaBackend.GPU -> GemmaBackendPreference(mode = this, backend = Backend.GPU())
     }
 }

@@ -5,17 +5,23 @@ import com.dreef3.weightlossapp.data.preferences.AppPreferences
 class SelectableFoodEstimationEngine(
     private val preferences: AppPreferences,
     private val gemmaEngine: FoodEstimationEngine,
-    private val smolVlmEngine: FoodEstimationEngine,
+    private val multimodalEngines: Map<CalorieEstimationModel, FoodEstimationEngine>,
 ) : FoodEstimationEngine {
-    override suspend fun estimate(request: FoodEstimationRequest): Result<FoodEstimationResult> =
-        when (preferences.readCalorieEstimationModel()) {
-            CalorieEstimationModel.Gemma -> gemmaEngine.estimate(request)
-            CalorieEstimationModel.SmolVlm -> smolVlmEngine.estimate(request)
+    override suspend fun estimate(request: FoodEstimationRequest): Result<FoodEstimationResult> {
+        val selected = preferences.readCalorieEstimationModel()
+        val engine = when (selected) {
+            CalorieEstimationModel.Gemma -> gemmaEngine
+            else -> multimodalEngines[selected] ?: gemmaEngine
         }
+        return engine.estimate(request)
+    }
 
-    override suspend fun warmUp(): Result<Unit> =
-        when (preferences.readCalorieEstimationModel()) {
-            CalorieEstimationModel.Gemma -> gemmaEngine.warmUp()
-            CalorieEstimationModel.SmolVlm -> smolVlmEngine.warmUp()
+    override suspend fun warmUp(): Result<Unit> {
+        val selected = preferences.readCalorieEstimationModel()
+        val engine = when (selected) {
+            CalorieEstimationModel.Gemma -> gemmaEngine
+            else -> multimodalEngines[selected] ?: gemmaEngine
         }
+        return engine.warmUp()
+    }
 }

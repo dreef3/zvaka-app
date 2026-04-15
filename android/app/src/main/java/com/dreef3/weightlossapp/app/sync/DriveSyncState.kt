@@ -11,5 +11,7 @@ data class DriveSyncState(
 data class UserPreferenceBackupSnapshot(
     val hasCompletedOnboarding: Boolean,
     val coachAutoAdviceEnabled: Boolean,
+    val coachModelStorageKey: String,
     val calorieEstimationModelStorageKey: String,
+    val gemmaBackendStorageKey: String,
 )

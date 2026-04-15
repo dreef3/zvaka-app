@@ -125,7 +125,7 @@ class OnboardingViewModelTest {
     fun completeSetupMarksOnboardingCompleted() = runTest(dispatcher) {
         val repository = FakeProfileRepository()
         val storage = ModelStorage(modelDirectoryOverride = kotlin.io.path.createTempDirectory().toFile())
-        val preferences = AppPreferences(ApplicationProvider.getApplicationContext())
+        val preferences = testPreferences()
         preferences.setCompletedOnboarding(false)
         val viewModel = createViewModel(
             repository = repository,
@@ -144,7 +144,7 @@ class OnboardingViewModelTest {
         repository: FakeProfileRepository,
         storage: ModelStorage,
         modelController: FakeModelDownloadController,
-        preferences: AppPreferences = AppPreferences(ApplicationProvider.getApplicationContext()),
+        preferences: AppPreferences = testPreferences(),
         networkConnectionMonitor: NetworkConnectionMonitor = FakeNetworkConnectionMonitor(NetworkConnectionType.Wifi),
     ): OnboardingViewModel {
         val saveUseCase = SaveUserProfileUseCase(
@@ -162,6 +162,11 @@ class OnboardingViewModelTest {
             networkConnectionMonitor = networkConnectionMonitor,
         )
     }
+
+    private fun testPreferences(): AppPreferences = AppPreferences(
+        context = ApplicationProvider.getApplicationContext(),
+        dataStoreName = "test-onboarding-prefs-${System.nanoTime()}",
+    )
 }
 
 private class FakeNetworkConnectionMonitor(
