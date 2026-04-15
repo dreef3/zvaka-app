@@ -2,6 +2,7 @@ package com.dreef3.weightlossapp.features.summary
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -50,10 +51,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.chat.CoachChatSession
 import com.dreef3.weightlossapp.domain.model.FoodEntry
-import java.io.File
-import android.graphics.BitmapFactory
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.io.File
 
 @Composable
 fun TodaySummaryScreenRoute(
@@ -65,8 +65,8 @@ fun TodaySummaryScreenRoute(
     val viewModel: TodaySummaryViewModel = viewModel(factory = TodaySummaryViewModelFactory(container))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
     var manualEntryTarget by remember { mutableStateOf<FoodEntry?>(null) }
+    var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
 
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
@@ -77,7 +77,7 @@ fun TodaySummaryScreenRoute(
         }
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
@@ -101,7 +101,7 @@ fun TodaySummaryScreenRoute(
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                 takePictureLauncher.launch(uri)
             } else {
-                permissionLauncher.launch(Manifest.permission.CAMERA)
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
         },
         onOpenTrends = onNavigateToTrends,

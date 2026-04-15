@@ -38,7 +38,6 @@ import com.dreef3.weightlossapp.app.notifications.needsNotificationPermission
 import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.chat.requiredModelDescriptor
 import com.dreef3.weightlossapp.features.chat.CoachChatScreenRoute
-import com.dreef3.weightlossapp.features.capture.FoodCaptureScreenRoute
 import com.dreef3.weightlossapp.features.onboarding.LocalModelPreparationScreen
 import com.dreef3.weightlossapp.features.onboarding.OnboardingScreenRoute
 import com.dreef3.weightlossapp.features.onboarding.ProfileEditScreen
@@ -143,12 +142,6 @@ fun AppNavHost(
                     onOpenMealDebug = { entryId ->
                         navController.navigate(AppDestinations.mealDebug(entryId))
                     },
-                )
-            }
-            composable(AppDestinations.Capture) {
-                FoodCaptureScreenRoute(
-                    container = AppContainer.instance,
-                    onBack = { navController.popBackStack() },
                 )
             }
             composable(AppDestinations.Trends) {
