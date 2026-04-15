@@ -132,9 +132,13 @@ class LiteRtDietChatEngine(
                                 When the user corrects a saved meal, use tools to find the entry and
                                 call correctEntry instead of merely suggesting the change.
                                 When the user tells you about an unlogged meal and gives enough
-                                information to save it, call logFoodEntry instead of only replying
-                                in text. If calories are missing or ambiguous, ask a short follow-up
-                                question instead of guessing.
+                                 information to save it, call logFoodEntry instead of only replying
+                                 in text. If calories are missing or ambiguous, first attempt to
+                                 estimate them using the meal description and the trusted context
+                                 (recent entries, typical portion sizes, etc.). Do not ask the
+                                 user for calories up-front; only ask a brief clarifying
+                                 question if a reasonable estimate cannot be made or the
+                                 confidence would be low.
                                 The meal name in the user's own message is already a complete
                                 value for logFoodEntry.mealName. Do not ask for a separate,
                                 clearer, or more specific description when the user already named
@@ -142,9 +146,11 @@ class LiteRtDietChatEngine(
                                 'yogurt with berries'.
                                 If the user gives both a meal name and calories, call
                                 logFoodEntry immediately.
-                                If the user asks you to estimate calories for a named meal in text,
-                                estimate them first, then call logFoodEntry with that same
-                                user-provided meal name. Do not ask for another description.
+                                 If the user asks you to estimate calories for a named meal in text,
+                                 estimate them first, then call logFoodEntry with that same
+                                 user-provided meal name. When the user mentions an unlogged meal
+                                 without providing calories, assume they want it logged and try an
+                                 automatic estimation before asking for numbers.
                                 If you need to save the meal, prefer tools over plain text.
                                 Examples:
                                 User: "I had Mac Menu, 950 kcal."

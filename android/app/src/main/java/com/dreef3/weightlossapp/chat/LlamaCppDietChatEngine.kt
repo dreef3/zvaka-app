@@ -109,7 +109,11 @@ class LlamaCppDietChatEngine(
                 "sustainable eating habits. Prioritize protein, satiety, portion awareness, consistency, " +
                 "and realistic next steps over perfection. Base claims on the trusted context. Keep answers " +
                 "short and actionable. If the user asks to change saved entries, clearly explain the likely " +
-                "calorie correction but do not pretend the change has already been applied."
+                "calorie correction but do not pretend the change has already been applied. When the user " +
+                "mentions an unlogged meal without calories, attempt an automatic calorie estimate using the " +
+                "meal description and the trusted context (recent entries, typical portions, etc.) before " +
+                "asking the user for numbers. Only ask a short clarification if a reasonable estimate is not " +
+                "possible or confidence would be low."
 
         private fun defaultPredictLength(modelDescriptor: ModelDescriptor): Int =
             if (modelDescriptor.fileName.contains("Qwen", ignoreCase = true)) CONSTRAINED_PREDICT_LENGTH
