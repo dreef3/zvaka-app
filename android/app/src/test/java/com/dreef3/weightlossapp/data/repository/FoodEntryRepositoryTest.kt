@@ -51,6 +51,7 @@ class FoodEntryRepositoryTest {
 
         repository.upsert(created.copy(finalCalories = 520, source = FoodEntrySource.UserCorrected))
         val edited = repository.observeEntriesFor(date).first().single()
+        assertEquals(createdId, edited.id)
         assertEquals(520, edited.finalCalories)
         assertEquals(FoodEntrySource.UserCorrected, edited.source)
 
@@ -73,6 +74,25 @@ class FoodEntryRepositoryTest {
         assertNotNull(stored)
         assertEquals(ConfirmationStatus.Rejected, stored.confirmationStatus)
         assertEquals("wrong food", stored.detectedFoodLabel)
+    }
+
+    @Test
+    fun updatesDescriptionOnExistingEntryWithoutCreatingANewRow() = runTest {
+        val createdId = repository.upsert(entry(detectedFoodLabel = "pastry"))
+        val created = repository.getEntry(createdId)!!
+
+        repository.upsert(
+            created.copy(
+                detectedFoodLabel = "potato burek",
+                source = FoodEntrySource.UserCorrected,
+            ),
+        )
+
+        val entries = repository.observeEntriesFor(date).first()
+        assertEquals(1, entries.size)
+        assertEquals(createdId, entries.single().id)
+        assertEquals("potato burek", entries.single().detectedFoodLabel)
+        assertEquals(FoodEntrySource.UserCorrected, entries.single().source)
     }
 
     private fun entry(

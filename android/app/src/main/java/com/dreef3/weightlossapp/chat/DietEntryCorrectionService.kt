@@ -50,13 +50,18 @@ class DietEntryCorrectionService(
         )
 
         updateFoodEntryUseCase(updated)
+        val persisted = foodEntryRepository.getEntry(request.entryId)
+            ?: return mapOf(
+                "success" to false,
+                "message" to "Entry ${request.entryId} could not be reloaded after update.",
+            )
 
         return mapOf(
             "success" to true,
-            "entryId" to updated.id,
-            "description" to (updated.detectedFoodLabel ?: "Unknown meal"),
-            "finalCalories" to updated.finalCalories,
-            "message" to "Entry ${updated.id} updated.",
+            "entryId" to persisted.id,
+            "description" to (persisted.detectedFoodLabel ?: "Unknown meal"),
+            "finalCalories" to persisted.finalCalories,
+            "message" to "Entry ${persisted.id} updated.",
         )
     }
 

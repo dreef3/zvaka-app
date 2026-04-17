@@ -73,7 +73,7 @@ class DietEntryTools(
     )
     fun correctEntry(
         @ToolParam(description = "The exact entryId of the saved food entry to update.") entryId: Int,
-        @ToolParam(description = "Corrected calorie value as a whole number. Use -1 if calories are not being changed.") correctedCalories: Int,
+        @ToolParam(description = "Corrected calorie value as a whole number. Calories are optional. Use -1 if calories are not being changed.") correctedCalories: Int,
         @ToolParam(description = "Corrected short food description. Use empty string if description is not being changed.") correctedDescription: String,
         @ToolParam(description = "Short reason based on the user's correction.") reason: String,
     ): Map<String, Any?> = runBlocking {

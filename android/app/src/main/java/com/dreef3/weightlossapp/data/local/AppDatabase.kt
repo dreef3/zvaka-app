@@ -23,7 +23,7 @@ import com.dreef3.weightlossapp.data.local.entity.ProfileEntity
         CoachChatSessionEntity::class,
         CoachChatMessageEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

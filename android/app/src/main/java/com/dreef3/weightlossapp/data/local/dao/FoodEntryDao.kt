@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface FoodEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(entry: FoodEntryEntity): Long
+    suspend fun insert(entry: FoodEntryEntity): Long
 
     @Query("SELECT * FROM food_entry WHERE entryDateIso = :dateIso")
     fun observeForDate(dateIso: String): Flow<List<FoodEntryEntity>>
@@ -28,6 +28,28 @@ interface FoodEntryDao {
     @Query("SELECT * FROM food_entry WHERE id = :entryId LIMIT 1")
     suspend fun getById(entryId: Long): FoodEntryEntity?
 
+    @Query("SELECT * FROM food_entry WHERE id = :entryId LIMIT 1")
+    fun observeById(entryId: Long): Flow<FoodEntryEntity?>
+
+    @Query(
+        """
+        SELECT * FROM food_entry
+        WHERE deletedAtEpochMs IS NULL
+          AND modelImprovementUploadedAtEpochMs IS NULL
+        ORDER BY capturedAtEpochMs ASC
+        """,
+    )
+    suspend fun getPendingModelImprovementUploads(): List<FoodEntryEntity>
+
+    @Query(
+        """
+        UPDATE food_entry
+        SET modelImprovementUploadedAtEpochMs = :uploadedAtEpochMs
+        WHERE id = :entryId
+        """,
+    )
+    suspend fun markModelImprovementUploaded(entryId: Long, uploadedAtEpochMs: Long)
+
     @Update
-    suspend fun update(entry: FoodEntryEntity)
+    suspend fun update(entry: FoodEntryEntity): Int
 }

@@ -8,6 +8,7 @@ import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
+import java.time.Instant
 
 class FoodEntryRepositoryImpl(
     private val foodEntryDao: FoodEntryDao,
@@ -23,12 +24,29 @@ class FoodEntryRepositoryImpl(
     override fun observeAllEntries(): Flow<List<FoodEntry>> =
         foodEntryDao.observeAll().map { items -> items.map { it.toDomain() } }
 
+    override fun observeEntry(entryId: Long): Flow<FoodEntry?> =
+        foodEntryDao.observeById(entryId).map { it?.toDomain() }
+
     override suspend fun getEntry(entryId: Long): FoodEntry? = foodEntryDao.getById(entryId)?.toDomain()
 
-    override suspend fun upsert(entry: FoodEntry): Long =
-        foodEntryDao.upsert(entry.toEntity()).also {
-            driveSyncTrigger.requestSync("food_entry:upsert")
+    override suspend fun getPendingModelImprovementUploads(): List<FoodEntry> =
+        foodEntryDao.getPendingModelImprovementUploads().map { it.toDomain() }
+
+    override suspend fun markModelImprovementUploaded(entryId: Long, uploadedAt: Instant) {
+        foodEntryDao.markModelImprovementUploaded(entryId, uploadedAt.toEpochMilli())
+        driveSyncTrigger.requestSync("food_entry:model_improvement_uploaded")
+    }
+
+    override suspend fun upsert(entry: FoodEntry): Long {
+        val entryId = if (entry.id == 0L) {
+            foodEntryDao.insert(entry.toEntity())
+        } else {
+            val updatedRows = foodEntryDao.update(entry.toEntity())
+            if (updatedRows > 0) entry.id else foodEntryDao.insert(entry.toEntity())
         }
+        driveSyncTrigger.requestSync("food_entry:upsert")
+        return entryId
+    }
 
     override suspend fun delete(entry: FoodEntry) {
         foodEntryDao.update(

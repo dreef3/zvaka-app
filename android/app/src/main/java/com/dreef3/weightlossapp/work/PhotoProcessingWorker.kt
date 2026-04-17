@@ -89,6 +89,11 @@ class PhotoProcessingWorker(
         )
 
         container.foodEntryRepository.upsert(entry)
+        if (entry.entryStatus == FoodEntryStatus.Ready) {
+            runCatching {
+                container.modelImprovementUploader.uploadIfEnabled(entry)
+            }
+        }
         return Result.success()
     }
 

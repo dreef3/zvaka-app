@@ -126,6 +126,7 @@ class AppDataBackupManager(
                     put(COACH_MODEL_KEY, preferenceSnapshot.coachModelStorageKey)
                     put(CALORIE_ESTIMATION_MODEL_KEY, preferenceSnapshot.calorieEstimationModelStorageKey)
                     put(GEMMA_BACKEND_KEY, preferenceSnapshot.gemmaBackendStorageKey)
+                    put(TRAINING_DATA_SHARING_ENABLED_KEY, preferenceSnapshot.trainingDataSharingEnabled)
                 },
             )
             put(PROFILE_KEY, profile?.toJson())
@@ -171,6 +172,7 @@ class AppDataBackupManager(
                     GEMMA_BACKEND_KEY,
                     GemmaBackend.CPU.storageKey,
                 ),
+                trainingDataSharingEnabled = preferencesJson.optBoolean(TRAINING_DATA_SHARING_ENABLED_KEY, false),
             ),
         )
 
@@ -182,7 +184,9 @@ class AppDataBackupManager(
         }
 
         manifest.getJSONArray(FOOD_ENTRIES_KEY).toFoodEntries(context.filesDir).forEach { entry ->
-            database.foodEntryDao().upsert(entry)
+            if (entry.id == 0L || database.foodEntryDao().update(entry) == 0) {
+                database.foodEntryDao().insert(entry)
+            }
         }
 
         manifest.getJSONArray(COACH_CHAT_SESSIONS_KEY).toChatSessions().forEach { session ->
@@ -252,6 +256,7 @@ class AppDataBackupManager(
         put("entryStatus", entryStatus)
         put("debugInteractionLog", debugInteractionLog)
         put("deletedAtEpochMs", deletedAtEpochMs)
+        put("modelImprovementUploadedAtEpochMs", modelImprovementUploadedAtEpochMs)
     }
 
     private fun CoachChatSessionEntity.toJson(): JSONObject = JSONObject().apply {
@@ -321,6 +326,8 @@ class AppDataBackupManager(
                         entryStatus = item.getString("entryStatus"),
                         debugInteractionLog = item.optString("debugInteractionLog").takeIf(String::isNotBlank),
                         deletedAtEpochMs = item.optLong("deletedAtEpochMs").takeIf { item.has("deletedAtEpochMs") && !item.isNull("deletedAtEpochMs") },
+                        modelImprovementUploadedAtEpochMs = item.optLong("modelImprovementUploadedAtEpochMs")
+                            .takeIf { item.has("modelImprovementUploadedAtEpochMs") && !item.isNull("modelImprovementUploadedAtEpochMs") },
                     ),
                 )
             }
@@ -375,5 +382,6 @@ class AppDataBackupManager(
         const val COACH_MODEL_KEY = "coachModel"
         const val CALORIE_ESTIMATION_MODEL_KEY = "calorieEstimationModel"
         const val GEMMA_BACKEND_KEY = "gemmaBackend"
+        const val TRAINING_DATA_SHARING_ENABLED_KEY = "trainingDataSharingEnabled"
     }
 }

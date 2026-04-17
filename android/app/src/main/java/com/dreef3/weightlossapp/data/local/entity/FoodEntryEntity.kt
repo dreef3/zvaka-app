@@ -19,4 +19,5 @@ data class FoodEntryEntity(
     val entryStatus: String,
     val debugInteractionLog: String?,
     val deletedAtEpochMs: Long?,
+    val modelImprovementUploadedAtEpochMs: Long?,
 )
