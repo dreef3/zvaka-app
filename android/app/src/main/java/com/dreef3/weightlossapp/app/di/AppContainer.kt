@@ -13,6 +13,8 @@ import com.dreef3.weightlossapp.app.media.ModelDownloader
 import com.dreef3.weightlossapp.app.media.ModelStorage
 import com.dreef3.weightlossapp.app.media.PhotoStorage
 import com.dreef3.weightlossapp.app.network.NetworkConnectionMonitor
+import com.dreef3.weightlossapp.app.training.ModelImprovementUploader
+import com.dreef3.weightlossapp.app.training.ModelImprovementUploadScheduler
 import com.dreef3.weightlossapp.app.sync.AppDataBackupManager
 import com.dreef3.weightlossapp.app.sync.DriveSyncScheduler
 import com.dreef3.weightlossapp.app.sync.GoogleDriveSyncManager
@@ -48,6 +50,12 @@ class AppContainer private constructor(context: Context) {
     val preferences = AppPreferences(context, driveSyncScheduler)
     val localDateProvider = LocalDateProvider()
     val photoStorage = PhotoStorage(context)
+    val modelImprovementUploadScheduler = ModelImprovementUploadScheduler(context)
+    val foodEntryRepository: FoodEntryRepository = FoodEntryRepositoryImpl(
+        foodEntryDao = database.foodEntryDao(),
+        driveSyncTrigger = driveSyncScheduler,
+    )
+    val modelImprovementUploader = ModelImprovementUploader(context, preferences, foodEntryRepository)
     val modelStorage = ModelStorage(context)
     val modelDownloader = ModelDownloader(modelStorage)
     val modelDownloadRepository = ModelDownloadRepository(context, modelStorage)
@@ -62,11 +70,6 @@ class AppContainer private constructor(context: Context) {
     val profileRepository: ProfileRepository = ProfileRepositoryImpl(
         profileDao = database.profileDao(),
         budgetDao = database.dailyCalorieBudgetPeriodDao(),
-        driveSyncTrigger = driveSyncScheduler,
-    )
-
-    val foodEntryRepository: FoodEntryRepository = FoodEntryRepositoryImpl(
-        foodEntryDao = database.foodEntryDao(),
         driveSyncTrigger = driveSyncScheduler,
     )
 

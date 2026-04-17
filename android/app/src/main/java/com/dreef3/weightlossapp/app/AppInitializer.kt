@@ -39,12 +39,24 @@ object AppInitializer {
                 recoverStalePhotoProcessingEntries(container)
                 container.modelStorage.logState(tag = TAG, model = ModelDescriptors.gemma)
                 val driveSyncEnabled = runBlocking { container.preferences.readDriveSyncState().isEnabled }
+                val trainingDataSharingEnabled = runBlocking { container.preferences.trainingDataSharingEnabled.first() }
                 val selectedCoachModel = runBlocking { container.preferences.readCoachModel() }
                 val selectedCalorieModel = runBlocking { container.preferences.readCalorieEstimationModel() }
                 if (driveSyncEnabled) {
                     container.driveSyncScheduler.enablePeriodicSync()
                 } else {
                     container.driveSyncScheduler.disablePeriodicSync()
+                }
+                if (trainingDataSharingEnabled) {
+                    container.modelImprovementUploadScheduler.enablePeriodicSync()
+                    container.modelImprovementUploadScheduler.enqueueImmediateSync()
+                    runCatching {
+                        runBlocking { container.modelImprovementUploader.uploadPendingIfEnabled() }
+                    }.onFailure { error ->
+                        debugLog("Startup model improvement upload sync failed: ${error.message}")
+                    }
+                } else {
+                    container.modelImprovementUploadScheduler.disablePeriodicSync()
                 }
                 val onboardingComplete = runBlocking { container.preferences.hasCompletedOnboarding.first() }
                 if (onboardingComplete &&

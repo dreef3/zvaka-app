@@ -78,6 +78,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -104,12 +105,13 @@ class MealDebugViewModel(
 
     init {
         viewModelScope.launch {
-            val entry = foodEntryRepository.getEntry(entryId)
-            _uiState.update {
-                MealDebugUiState(
-                    entry = entry,
-                    traceSections = entry?.debugInteractionLog.toTraceSections(),
-                )
+            foodEntryRepository.observeEntry(entryId).collectLatest { entry ->
+                _uiState.update {
+                    it.copy(
+                        entry = entry,
+                        traceSections = entry?.debugInteractionLog.toTraceSections(),
+                    )
+                }
             }
         }
     }

@@ -73,7 +73,7 @@ class DietEntryTools(
     )
     fun correctEntry(
         @ToolParam(description = "The exact entryId of the saved food entry to update.") entryId: Int,
-        @ToolParam(description = "Corrected calorie value as a whole number. Use -1 if calories are not being changed.") correctedCalories: Int,
+        @ToolParam(description = "Corrected calorie value as a whole number. Calories are optional. Use -1 if calories are not being changed.") correctedCalories: Int,
         @ToolParam(description = "Corrected short food description. Use empty string if description is not being changed.") correctedDescription: String,
         @ToolParam(description = "Short reason based on the user's correction.") reason: String,
     ): Map<String, Any?> = runBlocking {
@@ -111,5 +111,37 @@ class DietEntryTools(
 
     companion object {
         private const val TAG = "DietEntryTools"
+    }
+
+    // Backwards-compatible snake_case aliases. Some models emit tool names in
+    // snake_case (eg. log_food_entry) instead of the camelCase Kotlin method
+    // names above. Register these aliases so the tool call is recognized and
+    // executed instead of being returned as plain text by the model.
+    @Tool(description = "Alias for getTodaySummary (snake_case)")
+    fun get_today_summary(): Map<String, Any?> = getTodaySummary()
+
+    @Tool(description = "Alias for getRecentEntries (snake_case)")
+    fun get_recent_entries(limit: Int): Map<String, Any> = getRecentEntries(limit)
+
+    @Tool(description = "Alias for searchEntries (snake_case)")
+    fun search_entries(query: String, limit: Int): Map<String, Any> = searchEntries(query, limit)
+
+    @Tool(description = "Alias for correctEntry (snake_case)")
+    fun correct_entry(entry_id: Int, corrected_calories: Int, corrected_description: String, reason: String): Map<String, Any?> {
+        // Map snake_case param names to the camelCase implementation.
+        return correctEntry(
+            entryId = entry_id,
+            correctedCalories = corrected_calories,
+            correctedDescription = corrected_description,
+            reason = reason,
+        )
+    }
+
+    @Tool(description = "Alias for logFoodEntry (snake_case)")
+    fun log_food_entry(meal_name: String, calories: Int, date_iso: String, reason: String): Map<String, Any?> {
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "log_food_entry alias invoked mealName=$meal_name calories=$calories dateIso=$date_iso")
+        }
+        return logFoodEntry(mealName = meal_name, calories = calories, dateIso = date_iso, reason = reason)
     }
 }

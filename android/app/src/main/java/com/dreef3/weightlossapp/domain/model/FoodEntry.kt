@@ -41,4 +41,5 @@ data class FoodEntry(
     val entryStatus: FoodEntryStatus,
     val debugInteractionLog: String? = null,
     val deletedAt: Instant? = null,
+    val modelImprovementUploadedAt: Instant? = null,
 )

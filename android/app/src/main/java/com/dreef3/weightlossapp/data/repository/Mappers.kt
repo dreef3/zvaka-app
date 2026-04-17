@@ -79,6 +79,7 @@ internal fun FoodEntryEntity.toDomain(): FoodEntry = FoodEntry(
     entryStatus = FoodEntryStatus.valueOf(entryStatus),
     debugInteractionLog = debugInteractionLog,
     deletedAt = deletedAtEpochMs?.let(Instant::ofEpochMilli),
+    modelImprovementUploadedAt = modelImprovementUploadedAtEpochMs?.let(Instant::ofEpochMilli),
 )
 
 internal fun FoodEntry.toEntity(): FoodEntryEntity = FoodEntryEntity(
@@ -96,6 +97,7 @@ internal fun FoodEntry.toEntity(): FoodEntryEntity = FoodEntryEntity(
     entryStatus = entryStatus.name,
     debugInteractionLog = debugInteractionLog,
     deletedAtEpochMs = deletedAt?.toEpochMilli(),
+    modelImprovementUploadedAtEpochMs = modelImprovementUploadedAt?.toEpochMilli(),
 )
 
 internal fun CoachChatSessionEntity.toDomain(): CoachChatSession = CoachChatSession(

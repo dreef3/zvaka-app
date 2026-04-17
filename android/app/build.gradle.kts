@@ -14,6 +14,21 @@ val signingProperties = Properties().apply {
     }
 }
 
+val localEnvProperties = Properties().apply {
+    val envFile = rootProject.file("../.env.local")
+    if (envFile.exists()) {
+        envFile.forEachLine { rawLine ->
+            val line = rawLine.trim()
+            if (line.isEmpty() || line.startsWith("#")) return@forEachLine
+            val separatorIndex = line.indexOf('=')
+            if (separatorIndex <= 0) return@forEachLine
+            val key = line.substring(0, separatorIndex).trim()
+            val value = line.substring(separatorIndex + 1).trim()
+            setProperty(key, value)
+        }
+    }
+}
+
 val appVersionCode = providers.gradleProperty("appVersionCode")
     .orElse(providers.environmentVariable("APP_VERSION_CODE"))
     .map(String::toInt)
@@ -22,6 +37,30 @@ val appVersionCode = providers.gradleProperty("appVersionCode")
 val appVersionName = providers.gradleProperty("appVersionName")
     .orElse(providers.environmentVariable("APP_VERSION_NAME"))
     .getOrElse("0.1.0")
+
+val modelImprovementApiBaseUrl = providers.gradleProperty("modelImprovementApiBaseUrl")
+    .orElse(providers.environmentVariable("MODEL_IMPROVEMENT_API_BASE_URL"))
+    .orElse(localEnvProperties.getProperty("MODEL_IMPROVEMENT_API_BASE_URL") ?: "")
+    .getOrElse("")
+
+val modelImprovementCloudProjectNumber = providers.gradleProperty("modelImprovementCloudProjectNumber")
+    .orElse(providers.environmentVariable("MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER"))
+    .orElse(localEnvProperties.getProperty("MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER") ?: "")
+    .map(String::trim)
+    .getOrElse("0")
+
+val modelImprovementCloudProjectNumberLiteral = modelImprovementCloudProjectNumber
+    .toLongOrNull()
+    ?.let { "${it}L" }
+    ?: "0L"
+
+val modelImprovementDebugToken = providers.gradleProperty("modelImprovementDebugToken")
+    .orElse(providers.environmentVariable("MODEL_IMPROVEMENT_DEBUG_TOKEN"))
+    .orElse(localEnvProperties.getProperty("MODEL_IMPROVEMENT_DEBUG_TOKEN") ?: "")
+    .getOrElse("")
+
+fun String.asBuildConfigString(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "com.dreef3.weightlossapp"
@@ -33,6 +72,9 @@ android {
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
+        buildConfigField("String", "MODEL_IMPROVEMENT_API_BASE_URL", modelImprovementApiBaseUrl.asBuildConfigString())
+        buildConfigField("long", "MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER", modelImprovementCloudProjectNumberLiteral)
+        buildConfigField("String", "MODEL_IMPROVEMENT_DEBUG_TOKEN", "\"\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -68,6 +110,7 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             buildConfigField("boolean", "ENABLE_VERBOSE_LOGGING", "true")
+            buildConfigField("String", "MODEL_IMPROVEMENT_DEBUG_TOKEN", modelImprovementDebugToken.asBuildConfigString())
             manifestPlaceholders["appUsesCleartextTraffic"] = "false"
             if (signingConfigs.findByName("customDebug") != null) {
                 signingConfig = signingConfigs.getByName("customDebug")
@@ -140,8 +183,10 @@ dependencies {
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
     implementation("com.google.android.gms:play-services-auth:21.4.0")
+    implementation("com.google.android.play:integrity:1.6.0")
 
     implementation(composeBom)
     androidTestImplementation(composeBom)

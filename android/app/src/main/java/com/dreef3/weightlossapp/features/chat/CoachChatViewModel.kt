@@ -449,6 +449,15 @@ class CoachChatViewModel(
         val simpleActuallyPattern = Regex(
             pattern = """(?i)^(?:that|the)?\s*(.+?)\s+was\s+(?:actually|in fact)\s+(.+?)(?:[,.]|$)""",
         )
+        val updateToPattern = Regex(
+            pattern = """(?i)^(?:please\s+)?(?:update|change|rename|set)\s+(?:the\s+)?(.+?)(?:\s+entry)?\s+to\s+(.+?)(?:[,.]|$)""",
+        )
+        val descriptionToPattern = Regex(
+            pattern = """(?i)^(?:please\s+)?(?:update|change|set)\s+(?:the\s+)?description\s+(?:for|of)\s+(.+?)\s+to\s+(.+?)(?:[,.]|$)""",
+        )
+        val entryIsPattern = Regex(
+            pattern = """(?i)^(?:the\s+)?(.+?)\s+entry\s+(?:is|should be|should've been)\s+(.+?)(?:[,.]|$)""",
+        )
 
         entryActuallyPattern.find(text)?.let { match ->
             return ParsedCorrection(
@@ -459,6 +468,30 @@ class CoachChatViewModel(
             )
         }
         simpleActuallyPattern.find(text)?.let { match ->
+            return ParsedCorrection(
+                lookupQuery = match.groupValues[1].trim(),
+                correctedDescription = cleanDescription(match.groupValues[2]),
+                correctedCalories = calories,
+                reason = text,
+            )
+        }
+        descriptionToPattern.find(text)?.let { match ->
+            return ParsedCorrection(
+                lookupQuery = match.groupValues[1].trim(),
+                correctedDescription = cleanDescription(match.groupValues[2]),
+                correctedCalories = calories,
+                reason = text,
+            )
+        }
+        updateToPattern.find(text)?.let { match ->
+            return ParsedCorrection(
+                lookupQuery = match.groupValues[1].trim(),
+                correctedDescription = cleanDescription(match.groupValues[2]),
+                correctedCalories = calories,
+                reason = text,
+            )
+        }
+        entryIsPattern.find(text)?.let { match ->
             return ParsedCorrection(
                 lookupQuery = match.groupValues[1].trim(),
                 correctedDescription = cleanDescription(match.groupValues[2]),
