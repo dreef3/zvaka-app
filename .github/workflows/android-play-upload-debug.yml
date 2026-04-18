@@ -1,34 +1,34 @@
-name: Android Release
+name: Android Play Upload Debug
 
 on:
   workflow_dispatch:
     inputs:
-      bump_type:
-        description: Semantic version bump to apply
-        required: true
-        default: auto
-        type: choice
-        options:
-          - auto
-          - patch
-          - minor
-          - major
       tracks:
         description: Comma-separated Google Play tracks
         required: true
         default: qa
         type: string
+      version_code:
+        description: Optional explicit version code override
+        required: false
+        default: ""
+        type: string
+      version_name:
+        description: Optional explicit version name override
+        required: false
+        default: ""
+        type: string
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: android-play-upload-debug-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-release:
+  play-upload-debug:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
       id-token: write
+      contents: read
 
     defaults:
       run:
@@ -42,7 +42,7 @@ jobs:
           ref: ${{ github.sha }}
           submodules: recursive
 
-      - name: Compute release version
+      - name: Compute debug release version
         id: version
         run: |
           set -euo pipefail
@@ -57,46 +57,21 @@ jobs:
           $base_version
           EOF
 
-          selected_bump="${{ inputs.bump_type }}"
-          if [ "$selected_bump" = "auto" ]; then
-            if [ -n "$latest_tag" ]; then
-              commit_messages=$(git log --format=%s%n%b "${latest_tag}..HEAD")
-            else
-              commit_messages=$(git log --format=%s%n%b)
-            fi
+          default_version_name="${major}.${minor}.$((patch + 1))-debug"
+          default_version_code=$((major * 10000 + minor * 100 + patch + 1))
 
-            if printf '%s\n' "$commit_messages" | rg -q 'BREAKING CHANGE|^[^[:space:]]+(\([^)]+\))?!:'; then
-              selected_bump="major"
-            elif printf '%s\n' "$commit_messages" | rg -q '^feat(\([^)]+\))?:'; then
-              selected_bump="minor"
-            else
-              selected_bump="patch"
-            fi
+          version_name="${{ inputs.version_name }}"
+          version_code="${{ inputs.version_code }}"
+
+          if [ -z "$version_name" ]; then
+            version_name="$default_version_name"
+          fi
+          if [ -z "$version_code" ]; then
+            version_code="$default_version_code"
           fi
 
-          case "$selected_bump" in
-            patch)
-              patch=$((patch + 1))
-              ;;
-            minor)
-              minor=$((minor + 1))
-              patch=0
-              ;;
-            major)
-              major=$((major + 1))
-              minor=0
-              patch=0
-              ;;
-          esac
-
-          version_name="${major}.${minor}.${patch}"
-          version_tag="v${version_name}"
-          version_code=$((major * 10000 + minor * 100 + patch))
-
           {
-            echo "selected_bump=$selected_bump"
             echo "version_name=$version_name"
-            echo "version_tag=$version_tag"
             echo "version_code=$version_code"
           } >> "$GITHUB_OUTPUT"
 
@@ -156,26 +131,12 @@ jobs:
             -PappVersionName=${{ steps.version.outputs.version_name }} \
             bundleRelease assembleRelease --no-daemon
 
-      - name: Upload release artifacts
+      - name: Upload debug artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: zvaka-release-${{ steps.version.outputs.version_tag }}
+          name: zvaka-play-upload-debug-${{ github.run_id }}
           if-no-files-found: error
           path: |
-            android/app/build/outputs/bundle/release/app-release.aab
-            android/app/build/outputs/apk/release/app-release.apk
-            android/app/build/outputs/mapping/release/mapping.txt
-
-      - name: Create and publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.version_tag }}
-          target_commitish: ${{ github.sha }}
-          name: ${{ steps.version.outputs.version_tag }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          files: |
             android/app/build/outputs/bundle/release/app-release.aab
             android/app/build/outputs/apk/release/app-release.apk
             android/app/build/outputs/mapping/release/mapping.txt
