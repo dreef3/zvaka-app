@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import android.os.Looper
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,6 +36,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -93,6 +95,7 @@ class OnboardingViewModelTest {
         storage.fileFor(ModelDescriptors.gemma).writeText("model")
         modelController.state.value = ModelDownloadState(isDownloading = false, progressPercent = 100)
         advanceUntilIdle()
+        shadowOf(Looper.getMainLooper()).idle()
 
         assertEquals(OnboardingStep.Ready, viewModel.uiState.value.step)
     }

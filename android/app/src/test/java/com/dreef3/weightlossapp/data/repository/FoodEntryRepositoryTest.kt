@@ -109,7 +109,6 @@ class FoodEntryRepositoryTest {
 
         assertEquals(createdId, repository.observeEntriesFor(date).first().single().id)
     }
-
     private fun entry(
         confirmationStatus: ConfirmationStatus = ConfirmationStatus.NotRequired,
         detectedFoodLabel: String? = "pasta",

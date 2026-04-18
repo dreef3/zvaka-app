@@ -20,10 +20,10 @@ class HealthConnectCaloriesExporter(
     private val nutritionWritePermission = HealthPermission.getWritePermission(NutritionRecord::class)
 
     fun isAvailable(): Boolean =
-        HealthConnectClient.sdkStatus(context, HEALTH_CONNECT_PROVIDER_PACKAGE) == HealthConnectClient.SDK_AVAILABLE
+        HealthConnectClient.sdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
 
     fun permissionsLauncherContract() =
-        PermissionController.createRequestPermissionResultContract(HEALTH_CONNECT_PROVIDER_PACKAGE)
+        PermissionController.createRequestPermissionResultContract()
 
     fun requiredPermissions(): Set<String> = setOf(nutritionWritePermission)
 
@@ -75,8 +75,4 @@ class HealthConnectCaloriesExporter(
     private fun zoneOffsetFor(instant: Instant) = ZoneId.systemDefault().rules.getOffset(instant)
 
     private fun clientRecordId(entryId: Long): String = "weightlossapp-food-entry-$entryId"
-
-    companion object {
-        const val HEALTH_CONNECT_PROVIDER_PACKAGE = "com.google.android.apps.healthdata"
-    }
 }

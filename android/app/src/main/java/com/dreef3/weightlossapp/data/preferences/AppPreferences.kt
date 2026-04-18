@@ -81,7 +81,6 @@ class AppPreferences(
             if (it is IOException) emit(emptyPreferences()) else throw it
         }
         .map { prefs -> prefs[Keys.HealthConnectCaloriesEnabled] ?: false }
-
     val driveSyncState: Flow<DriveSyncState> = dataStore.data
         .catch {
             if (it is IOException) emit(emptyPreferences()) else throw it
@@ -151,7 +150,6 @@ class AppPreferences(
         }
         driveSyncTrigger.requestSync("preferences:health_connect_calories")
     }
-
     suspend fun readCalorieEstimationModel(): CalorieEstimationModel =
         calorieEstimationModel.map { it }.catch {
             if (it is IOException) emit(CalorieEstimationModel.Gemma) else throw it
