@@ -36,6 +36,7 @@ data class OnboardingUiState(
     val estimatedBudgetCalories: Int? = null,
     val modelDownloadState: ModelDownloadState = ModelDownloadState(),
     val showCellularDownloadConfirmation: Boolean = false,
+    val hasInitializedHealthConnectChoice: Boolean = false,
 )
 
 class OnboardingViewModel(
@@ -54,12 +55,18 @@ class OnboardingViewModel(
         viewModelScope.launch {
             combine(
                 profileRepository.observeProfile(),
+                preferences.healthConnectCaloriesEnabled,
                 modelDownloadController.observeState(ModelDescriptors.gemma),
-            ) { profile, downloadState -> profile to downloadState }
-                .collect { (profile, downloadState) ->
+            ) { profile, healthConnectEnabled, downloadState -> Triple(profile, healthConnectEnabled, downloadState) }
+                .collect { (profile, healthConnectEnabled, downloadState) ->
                     _uiState.update { current ->
-                        val populatedForm = if (profile != null && current.form.firstName.isBlank()) {
-                            current.form.copy(
+                        val formWithHealthConnect = if (!current.hasInitializedHealthConnectChoice) {
+                            current.form.copy(healthConnectCaloriesEnabled = healthConnectEnabled)
+                        } else {
+                            current.form
+                        }
+                        val populatedForm = if (profile != null && formWithHealthConnect.firstName.isBlank()) {
+                            formWithHealthConnect.copy(
                                 firstName = profile.firstName,
                                 ageYears = profile.ageYears.toString(),
                                 heightCm = profile.heightCm.toString(),
@@ -68,7 +75,7 @@ class OnboardingViewModel(
                                 activityLevel = profile.activityLevel,
                             )
                         } else {
-                            current.form
+                            formWithHealthConnect
                         }
 
                         val estimatedBudget = populatedForm.estimatedBudgetOrNull(budgetCalculator)
@@ -87,6 +94,7 @@ class OnboardingViewModel(
                             estimatedBudgetCalories = estimatedBudget,
                             modelDownloadState = downloadState,
                             showCellularDownloadConfirmation = if (nextStep != current.step && nextStep == OnboardingStep.Ready) false else current.showCellularDownloadConfirmation,
+                            hasInitializedHealthConnectChoice = true,
                         )
                     }
                 }
@@ -184,6 +192,7 @@ class OnboardingViewModel(
     fun completeSetup() {
         viewModelScope.launch {
             _uiState.update { it.copy(isCompleted = true) }
+            preferences.setHealthConnectCaloriesEnabled(_uiState.value.form.healthConnectCaloriesEnabled)
             preferences.setCompletedOnboarding(true)
         }
     }

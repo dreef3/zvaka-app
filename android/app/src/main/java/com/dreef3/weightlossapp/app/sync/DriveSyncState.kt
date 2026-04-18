@@ -15,4 +15,5 @@ data class UserPreferenceBackupSnapshot(
     val calorieEstimationModelStorageKey: String,
     val gemmaBackendStorageKey: String,
     val trainingDataSharingEnabled: Boolean,
+    val healthConnectCaloriesEnabled: Boolean,
 )

@@ -20,12 +20,14 @@ import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileUseCase
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import android.os.Looper
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,6 +36,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -87,10 +90,13 @@ class OnboardingViewModelTest {
 
         viewModel.requestModelDownload()
         advanceUntilIdle()
-        assertEquals(OnboardingStep.Downloading, viewModel.uiState.value.step)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, modelController.enqueueCalls)
 
         storage.fileFor(ModelDescriptors.gemma).writeText("model")
         modelController.state.value = ModelDownloadState(isDownloading = false, progressPercent = 100)
+        advanceUntilIdle()
+        shadowOf(Looper.getMainLooper()).idle()
         advanceUntilIdle()
 
         assertEquals(OnboardingStep.Ready, viewModel.uiState.value.step)
@@ -138,6 +144,25 @@ class OnboardingViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.isCompleted)
+    }
+
+    @Test
+    fun completeSetupPersistsHealthConnectOptIn() = runTest(dispatcher) {
+        val repository = FakeProfileRepository()
+        val storage = ModelStorage(modelDirectoryOverride = kotlin.io.path.createTempDirectory().toFile())
+        val preferences = testPreferences()
+        val viewModel = createViewModel(
+            repository = repository,
+            storage = storage,
+            modelController = FakeModelDownloadController(),
+            preferences = preferences,
+        )
+
+        viewModel.updateForm { it.copy(healthConnectCaloriesEnabled = true) }
+        viewModel.completeSetup()
+        advanceUntilIdle()
+
+        assertTrue(preferences.healthConnectCaloriesEnabled.dropWhile { !it }.first())
     }
 
     private fun createViewModel(
@@ -203,6 +228,7 @@ private class FakeModelDownloadController : ModelDownloadController {
 
     override fun enqueueIfNeeded(model: ModelDescriptor) {
         enqueueCalls += 1
+        state.value = ModelDownloadState(isDownloading = true, progressPercent = 0)
     }
 
     override fun observeState(model: ModelDescriptor): Flow<ModelDownloadState> = state

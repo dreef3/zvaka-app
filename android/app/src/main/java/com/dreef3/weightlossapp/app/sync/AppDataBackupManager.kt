@@ -127,6 +127,7 @@ class AppDataBackupManager(
                     put(CALORIE_ESTIMATION_MODEL_KEY, preferenceSnapshot.calorieEstimationModelStorageKey)
                     put(GEMMA_BACKEND_KEY, preferenceSnapshot.gemmaBackendStorageKey)
                     put(TRAINING_DATA_SHARING_ENABLED_KEY, preferenceSnapshot.trainingDataSharingEnabled)
+                    put(HEALTH_CONNECT_CALORIES_ENABLED_KEY, preferenceSnapshot.healthConnectCaloriesEnabled)
                 },
             )
             put(PROFILE_KEY, profile?.toJson())
@@ -173,6 +174,7 @@ class AppDataBackupManager(
                     GemmaBackend.CPU.storageKey,
                 ),
                 trainingDataSharingEnabled = preferencesJson.optBoolean(TRAINING_DATA_SHARING_ENABLED_KEY, false),
+                healthConnectCaloriesEnabled = preferencesJson.optBoolean(HEALTH_CONNECT_CALORIES_ENABLED_KEY, false),
             ),
         )
 
@@ -383,5 +385,6 @@ class AppDataBackupManager(
         const val CALORIE_ESTIMATION_MODEL_KEY = "calorieEstimationModel"
         const val GEMMA_BACKEND_KEY = "gemmaBackend"
         const val TRAINING_DATA_SHARING_ENABLED_KEY = "trainingDataSharingEnabled"
+        const val HEALTH_CONNECT_CALORIES_ENABLED_KEY = "healthConnectCaloriesEnabled"
     }
 }

@@ -3,6 +3,7 @@ package com.dreef3.weightlossapp.data.repository
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.dreef3.weightlossapp.data.local.AppDatabase
+import com.dreef3.weightlossapp.data.preferences.AppPreferences
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntry
@@ -24,6 +25,7 @@ import java.time.LocalDate
 class FoodEntryRepositoryTest {
     private lateinit var db: AppDatabase
     private lateinit var repository: FoodEntryRepositoryImpl
+    private lateinit var preferences: AppPreferences
     private val date = LocalDate.parse("2026-04-03")
 
     @Before
@@ -32,7 +34,11 @@ class FoodEntryRepositoryTest {
             ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java,
         ).allowMainThreadQueries().build()
-        repository = FoodEntryRepositoryImpl(db.foodEntryDao())
+        preferences = AppPreferences(
+            context = ApplicationProvider.getApplicationContext(),
+            dataStoreName = "test-food-entry-prefs-${System.nanoTime()}",
+        )
+        repository = FoodEntryRepositoryImpl(db.foodEntryDao(), preferences = preferences)
     }
 
     @After
@@ -95,6 +101,14 @@ class FoodEntryRepositoryTest {
         assertEquals(FoodEntrySource.UserCorrected, entries.single().source)
     }
 
+    @Test
+    fun doesNotFailWhenHealthConnectPreferenceIsEnabledWithoutExporter() = runTest {
+        preferences.setHealthConnectCaloriesEnabled(true)
+
+        val createdId = repository.upsert(entry())
+
+        assertEquals(createdId, repository.observeEntriesFor(date).first().single().id)
+    }
     private fun entry(
         confirmationStatus: ConfirmationStatus = ConfirmationStatus.NotRequired,
         detectedFoodLabel: String? = "pasta",

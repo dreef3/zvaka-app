@@ -1,6 +1,7 @@
 package com.dreef3.weightlossapp.features.onboarding
 
 import android.app.Activity
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -65,6 +67,7 @@ private enum class PendingDriveAction {
     Restore,
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProfileEditScreen(
     container: AppContainer,
@@ -76,6 +79,7 @@ fun ProfileEditScreen(
     val budgetPeriods by container.profileRepository.observeBudgetPeriods().collectAsStateWithLifecycle(initialValue = emptyList())
     val driveSyncState by container.preferences.driveSyncState.collectAsStateWithLifecycle(initialValue = DriveSyncState())
     val trainingDataSharingEnabled by container.preferences.trainingDataSharingEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val healthConnectCaloriesEnabled by container.preferences.healthConnectCaloriesEnabled.collectAsStateWithLifecycle(initialValue = false)
     val coachModel by container.preferences.coachModel.collectAsStateWithLifecycle(initialValue = CoachModel.Gemma)
     val gemmaBackend by container.preferences.gemmaBackend.collectAsStateWithLifecycle(initialValue = GemmaBackend.CPU)
     val calorieModel by container.preferences.calorieEstimationModel.collectAsStateWithLifecycle(initialValue = CalorieEstimationModel.Gemma)
@@ -97,6 +101,8 @@ fun ProfileEditScreen(
         .observeState(selectedCoachDescriptor)
         .collectAsStateWithLifecycle(initialValue = ModelDownloadState())
     val selectedCoachReady = container.modelStorage.hasUsableModel(selectedCoachDescriptor)
+    val healthConnectAvailable = container.healthConnectCaloriesExporter.isAvailable()
+    val healthConnectNeedsProviderSetup = container.healthConnectCaloriesExporter.needsProviderSetup()
 
     var form by remember { mutableStateOf(OnboardingFormState()) }
     var hasLoaded by remember { mutableStateOf(false) }
@@ -110,8 +116,23 @@ fun ProfileEditScreen(
     var driveStatusMessage by remember { mutableStateOf<String?>(null) }
     var pendingDriveAction by remember { mutableStateOf<PendingDriveAction?>(null) }
     var showAdvancedSettings by remember { mutableStateOf(false) }
+    var healthConnectStatusMessage by remember { mutableStateOf<String?>(null) }
     val currentBudget = budgetPeriods.maxByOrNull { it.effectiveFromDate }?.caloriesPerDay
     val requiredResetName = profile?.firstName?.trim().orEmpty()
+
+    val healthConnectPermissionLauncher = rememberLauncherForActivityResult(
+        contract = container.healthConnectCaloriesExporter.permissionsLauncherContract(),
+    ) { granted ->
+        scope.launch {
+            val allowed = granted.containsAll(container.healthConnectCaloriesExporter.requiredPermissions())
+            container.preferences.setHealthConnectCaloriesEnabled(allowed)
+            healthConnectStatusMessage = if (allowed) {
+                "Health Connect calorie sync is on. New and edited meals will be published there."
+            } else {
+                "Health Connect permission was not granted, so calorie sync stays off."
+            }
+        }
+    }
 
     suspend fun runDriveAction(
         action: PendingDriveAction,
@@ -316,6 +337,201 @@ fun ProfileEditScreen(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                val trainingUploadConfigured =
+                    BuildConfig.MODEL_IMPROVEMENT_API_BASE_URL.isNotBlank() &&
+                        (
+                            BuildConfig.MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER > 0L ||
+                                (BuildConfig.DEBUG && BuildConfig.MODEL_IMPROVEMENT_DEBUG_TOKEN.isNotBlank())
+                            )
+                Text(
+                    text = "Data and sync",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f).padding(end = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "Publish calories to Health Connect",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = if (healthConnectAvailable) {
+                                "When enabled, each saved meal publishes its calorie total to Health Connect as a nutrition record."
+                            } else if (healthConnectNeedsProviderSetup) {
+                                "Health Connect needs setup or an update before this app can request access."
+                            } else {
+                                "Health Connect is not available on this device."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = healthConnectCaloriesEnabled,
+                        enabled = healthConnectAvailable || healthConnectNeedsProviderSetup,
+                        onCheckedChange = { enabled ->
+                            scope.launch {
+                                if (!enabled) {
+                                    container.preferences.setHealthConnectCaloriesEnabled(false)
+                                    healthConnectStatusMessage = "Health Connect calorie sync is off. Existing records remain in Health Connect."
+                                } else if (healthConnectAvailable) {
+                                    if (container.healthConnectCaloriesExporter.hasWritePermission()) {
+                                        container.preferences.setHealthConnectCaloriesEnabled(true)
+                                        healthConnectStatusMessage = "Health Connect permission is already granted. New and edited meals will be published there."
+                                    } else {
+                                        healthConnectStatusMessage = null
+                                        healthConnectPermissionLauncher.launch(container.healthConnectCaloriesExporter.requiredPermissions())
+                                    }
+                                } else if (healthConnectNeedsProviderSetup) {
+                                    healthConnectStatusMessage = "Opening Health Connect so you can finish setup and grant access."
+                                    container.preferences.setHealthConnectCaloriesEnabled(false)
+                                    container.healthConnectCaloriesExporter.openProviderSetup()
+                                } else {
+                                    healthConnectStatusMessage = "Health Connect is not available on this device."
+                                    container.preferences.setHealthConnectCaloriesEnabled(false)
+                                }
+                            }
+                        },
+                    )
+                }
+                if (!healthConnectStatusMessage.isNullOrBlank()) {
+                    Text(
+                        text = healthConnectStatusMessage.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f).padding(end = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "Share meal data for model improvement",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = if (!trainingUploadConfigured) {
+                                "Model improvement upload is not configured for this build."
+                            } else if (BuildConfig.DEBUG && BuildConfig.MODEL_IMPROVEMENT_DEBUG_TOKEN.isNotBlank()) {
+                                "Debug build uploads use a local debug token instead of Play Integrity."
+                            } else {
+                                "When enabled, Žvaka uploads a downscaled meal photo, detected description, and calorie estimate after Play Integrity verification for recognized installs."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = trainingDataSharingEnabled,
+                        enabled = trainingUploadConfigured,
+                        onCheckedChange = { enabled ->
+                            scope.launch {
+                                container.preferences.setTrainingDataSharingEnabled(enabled)
+                                if (enabled) {
+                                    container.modelImprovementUploadScheduler.enablePeriodicSync()
+                                    container.modelImprovementUploadScheduler.enqueueImmediateSync()
+                                    container.modelImprovementUploader.uploadPendingIfEnabled()
+                                } else {
+                                    container.modelImprovementUploadScheduler.disablePeriodicSync()
+                                }
+                            }
+                        },
+                    )
+                }
+                HorizontalDivider()
+                Text(
+                    text = "Google Drive backup",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = if (driveSyncState.isEnabled) {
+                        buildString {
+                            append("Google Drive sync is on")
+                            driveSyncState.accountEmail?.let { append(" for ").append(it) }
+                            driveSyncState.lastSyncedAtEpochMs?.let {
+                                append(". Last sync: ").append(formatDriveSyncTime(it))
+                            }
+                        }
+                    } else {
+                        "Connect Google Drive to keep your local-first data backed up automatically in the app\'s hidden Drive storage."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "Sync covers profile, budgets, meal history, coach chats, and saved meal photos. Downloaded AI model files stay local and re-download on device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (!driveStatusMessage.isNullOrBlank()) {
+                    Text(
+                        text = driveStatusMessage.orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                driveSyncState.lastError?.let { error ->
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (driveSyncState.isEnabled) {
+                    Button(
+                        onClick = { scope.launch { startDriveAction(PendingDriveAction.SyncNow) } },
+                        enabled = !isDriveBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (isDriveBusy && pendingDriveAction == PendingDriveAction.SyncNow) "Syncing..." else "Sync now")
+                    }
+                    OutlinedButton(
+                        onClick = { showRestoreDialog = true },
+                        enabled = !isDriveBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Restore latest backup from Drive")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                isDriveBusy = true
+                                container.driveSyncScheduler.disablePeriodicSync()
+                                container.googleDriveSyncManager.disconnect()
+                                driveStatusMessage = "Google Drive automatic sync turned off."
+                                isDriveBusy = false
+                            }
+                        },
+                        enabled = !isDriveBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Turn off automatic sync")
+                    }
+                } else {
+                    Button(
+                        onClick = { scope.launch { startDriveAction(PendingDriveAction.Connect) } },
+                        enabled = !isDriveBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (isDriveBusy && pendingDriveAction == PendingDriveAction.Connect) "Connecting..." else "Connect Google Drive")
+                    }
+                }
+                HorizontalDivider()
                 OutlinedButton(
                     onClick = { showAdvancedSettings = !showAdvancedSettings },
                     modifier = Modifier.fillMaxWidth(),
@@ -323,60 +539,11 @@ fun ProfileEditScreen(
                     Text(if (showAdvancedSettings) "Hide advanced settings" else "Show advanced settings")
                 }
                 if (showAdvancedSettings) {
-                    val trainingUploadConfigured =
-                        BuildConfig.MODEL_IMPROVEMENT_API_BASE_URL.isNotBlank() &&
-                            (
-                                BuildConfig.MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER > 0L ||
-                                    (BuildConfig.DEBUG && BuildConfig.MODEL_IMPROVEMENT_DEBUG_TOKEN.isNotBlank())
-                                )
                     Text(
                         text = "Photo estimation model",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f).padding(end = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = "Share meal data for model improvement",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = if (!trainingUploadConfigured) {
-                                    "Model improvement upload is not configured for this build."
-                                } else if (BuildConfig.DEBUG && BuildConfig.MODEL_IMPROVEMENT_DEBUG_TOKEN.isNotBlank()) {
-                                    "Debug build uploads use a local debug token instead of Play Integrity."
-                                } else {
-                                    "When enabled, Žvaka uploads a downscaled meal photo, detected description, and calorie estimate after Play Integrity verification for recognized installs."
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = trainingDataSharingEnabled,
-                            enabled = trainingUploadConfigured,
-                            onCheckedChange = { enabled ->
-                                scope.launch {
-                                    container.preferences.setTrainingDataSharingEnabled(enabled)
-                                    if (enabled) {
-                                        container.modelImprovementUploadScheduler.enablePeriodicSync()
-                                        container.modelImprovementUploadScheduler.enqueueImmediateSync()
-                                        container.modelImprovementUploader.uploadPendingIfEnabled()
-                                    } else {
-                                        container.modelImprovementUploadScheduler.disablePeriodicSync()
-                                    }
-                                }
-                            },
-                        )
-                    }
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -530,90 +697,27 @@ fun ProfileEditScreen(
                             },
                         )
                     }
-                }
-                Text(
-                    text = if (driveSyncState.isEnabled) {
-                        buildString {
-                            append("Google Drive sync is on")
-                            driveSyncState.accountEmail?.let { append(" for ").append(it) }
-                            driveSyncState.lastSyncedAtEpochMs?.let {
-                                append(". Last sync: ").append(formatDriveSyncTime(it))
-                            }
-                        }
-                    } else {
-                        "Connect Google Drive to keep your local-first data backed up automatically in the app's hidden Drive storage."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = "Sync covers profile, budgets, meal history, coach chats, and saved meal photos. Downloaded AI model files stay local and re-download on device.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (!driveStatusMessage.isNullOrBlank()) {
                     Text(
-                        text = driveStatusMessage.orEmpty(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                driveSyncState.lastError?.let { error ->
-                    Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Reset app",
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.error,
                     )
-                }
-                if (driveSyncState.isEnabled) {
-                    Button(
-                        onClick = { scope.launch { startDriveAction(PendingDriveAction.SyncNow) } },
-                        enabled = !isDriveBusy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(if (isDriveBusy && pendingDriveAction == PendingDriveAction.SyncNow) "Syncing..." else "Sync now")
-                    }
+                    Text(
+                        text = "Erase all local data and restart onboarding. This cannot be undone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     OutlinedButton(
-                        onClick = { showRestoreDialog = true },
-                        enabled = !isDriveBusy,
+                        onClick = { showResetDialog = true },
+                        enabled = !isResetting,
                         modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.16f),
+                        ),
                     ) {
-                        Text("Restore latest backup from Drive")
+                        Text(if (isResetting) "Resetting..." else "Reset app and restart onboarding")
                     }
-                    OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                isDriveBusy = true
-                                container.driveSyncScheduler.disablePeriodicSync()
-                                container.googleDriveSyncManager.disconnect()
-                                driveStatusMessage = "Google Drive automatic sync turned off."
-                                isDriveBusy = false
-                            }
-                        },
-                        enabled = !isDriveBusy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Turn off automatic sync")
-                    }
-                } else {
-                    Button(
-                        onClick = { scope.launch { startDriveAction(PendingDriveAction.Connect) } },
-                        enabled = !isDriveBusy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(if (isDriveBusy && pendingDriveAction == PendingDriveAction.Connect) "Connecting..." else "Connect Google Drive")
-                    }
-                }
-                OutlinedButton(
-                    onClick = { showResetDialog = true },
-                    enabled = !isResetting,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.16f),
-                    ),
-                ) {
-                    Text(if (isResetting) "Resetting..." else "Reset app and restart onboarding")
                 }
             }
         }

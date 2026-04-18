@@ -168,6 +168,7 @@ android {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.01.00")
     val roomVersion = "2.8.4"
+    val healthConnectVersion = "1.0.0-alpha11"
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.1")
@@ -182,6 +183,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.4.1")
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.health.connect:connect-client:$healthConnectVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")

@@ -66,6 +66,9 @@ fun OnboardingScreenRoute(
     var isRestoringBackup by remember { mutableStateOf(false) }
     var onboardingDriveMessage by remember { mutableStateOf<String?>(null) }
     var onboardingNotificationMessage by remember { mutableStateOf<String?>(null) }
+    var onboardingHealthConnectMessage by remember { mutableStateOf<String?>(null) }
+    val healthConnectAvailable = container.healthConnectCaloriesExporter.isAvailable()
+    val healthConnectNeedsProviderSetup = container.healthConnectCaloriesExporter.needsProviderSetup()
 
     LaunchedEffect(state.isCompleted) {
         if (state.isCompleted) onCompleted()
@@ -117,6 +120,17 @@ fun OnboardingScreenRoute(
         vm.requestModelDownload()
     }
 
+    val healthConnectPermissionLauncher = rememberLauncherForActivityResult(
+        contract = container.healthConnectCaloriesExporter.permissionsLauncherContract(),
+    ) { granted ->
+        if (state.form.healthConnectCaloriesEnabled &&
+            !granted.containsAll(container.healthConnectCaloriesExporter.requiredPermissions())
+        ) {
+            onboardingHealthConnectMessage = "Health Connect permission was not granted, so calorie sync will stay off."
+            vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
+        }
+    }
+
     OnboardingScreen(
         state = state,
         onContinueFromIntro = vm::continueFromIntro,
@@ -150,6 +164,30 @@ fun OnboardingScreenRoute(
         onWeightChanged = { value -> vm.updateForm { it.copy(weightKg = value.filter(Char::isDigit)) } },
         onSexChanged = { value -> vm.updateForm { it.copy(sex = value) } },
         onActivityLevelChanged = { value -> vm.updateForm { it.copy(activityLevel = value) } },
+        onHealthConnectCaloriesChanged = { enabled ->
+            if (!enabled) {
+                onboardingHealthConnectMessage = null
+                vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
+            } else if (healthConnectAvailable) {
+                scope.launch {
+                    if (container.healthConnectCaloriesExporter.hasWritePermission()) {
+                        onboardingHealthConnectMessage = "Health Connect permission is already granted."
+                        vm.updateForm { it.copy(healthConnectCaloriesEnabled = true) }
+                    } else {
+                        onboardingHealthConnectMessage = null
+                        vm.updateForm { it.copy(healthConnectCaloriesEnabled = true) }
+                        healthConnectPermissionLauncher.launch(container.healthConnectCaloriesExporter.requiredPermissions())
+                    }
+                }
+            } else if (healthConnectNeedsProviderSetup) {
+                onboardingHealthConnectMessage = "Opening Health Connect so you can finish setup and grant access."
+                vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
+                container.healthConnectCaloriesExporter.openProviderSetup()
+            } else {
+                onboardingHealthConnectMessage = "Health Connect is not available on this device."
+                vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
+            }
+        },
         onBackFromProfile = vm::backFromProfile,
         onSubmitProfile = vm::submitProfile,
         onStartModelDownload = {
@@ -165,6 +203,9 @@ fun OnboardingScreenRoute(
         isRestoringBackup = isRestoringBackup,
         onboardingDriveMessage = onboardingDriveMessage,
         onboardingNotificationMessage = onboardingNotificationMessage,
+        onboardingHealthConnectMessage = onboardingHealthConnectMessage,
+        healthConnectAvailable = healthConnectAvailable,
+        healthConnectNeedsProviderSetup = healthConnectNeedsProviderSetup,
     )
 }
 
@@ -179,6 +220,7 @@ fun OnboardingScreen(
     onWeightChanged: (String) -> Unit,
     onSexChanged: (Sex) -> Unit,
     onActivityLevelChanged: (ActivityLevel) -> Unit,
+    onHealthConnectCaloriesChanged: (Boolean) -> Unit,
     onBackFromProfile: () -> Unit,
     onSubmitProfile: () -> Unit,
     onStartModelDownload: () -> Unit,
@@ -188,6 +230,9 @@ fun OnboardingScreen(
     isRestoringBackup: Boolean,
     onboardingDriveMessage: String?,
     onboardingNotificationMessage: String?,
+    onboardingHealthConnectMessage: String?,
+    healthConnectAvailable: Boolean,
+    healthConnectNeedsProviderSetup: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -211,8 +256,12 @@ fun OnboardingScreen(
                 onWeightChanged = onWeightChanged,
                 onSexChanged = onSexChanged,
                 onActivityLevelChanged = onActivityLevelChanged,
+                onHealthConnectCaloriesChanged = onHealthConnectCaloriesChanged,
                 onBack = onBackFromProfile,
                 onContinue = onSubmitProfile,
+                onboardingHealthConnectMessage = onboardingHealthConnectMessage,
+                healthConnectAvailable = healthConnectAvailable,
+                healthConnectNeedsProviderSetup = healthConnectNeedsProviderSetup,
             )
             OnboardingStep.BudgetPreview -> BudgetPreviewStep(
                 firstName = state.form.firstName,
@@ -309,8 +358,12 @@ private fun ProfileStep(
     onWeightChanged: (String) -> Unit,
     onSexChanged: (Sex) -> Unit,
     onActivityLevelChanged: (ActivityLevel) -> Unit,
+    onHealthConnectCaloriesChanged: (Boolean) -> Unit,
     onBack: () -> Unit,
     onContinue: () -> Unit,
+    onboardingHealthConnectMessage: String?,
+    healthConnectAvailable: Boolean,
+    healthConnectNeedsProviderSetup: Boolean,
 ) {
     StepCard {
         Text(
@@ -326,7 +379,17 @@ private fun ProfileStep(
             onWeightChanged = onWeightChanged,
             onSexChanged = onSexChanged,
             onActivityLevelChanged = onActivityLevelChanged,
+            healthConnectAvailable = healthConnectAvailable,
+            healthConnectNeedsProviderSetup = healthConnectNeedsProviderSetup,
+            onHealthConnectCaloriesChanged = onHealthConnectCaloriesChanged,
         )
+        onboardingHealthConnectMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         state.errors.forEach { error ->
             Text(
                 text = error,

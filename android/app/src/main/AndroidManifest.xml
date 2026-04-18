@@ -2,11 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
+
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.health.WRITE_NUTRITION" />
 
     <application
         android:allowBackup="false"
@@ -28,6 +33,33 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".app.health.HealthConnectPermissionsRationaleActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".app.health.HealthConnectOnboardingActivity"
+            android:exported="true"
+            android:permission="com.google.android.apps.healthdata.permission.START_ONBOARDING">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_ONBOARDING" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name="HealthConnectOnboardingActivityAlias"
+            android:exported="true"
+            android:targetActivity=".app.health.HealthConnectOnboardingActivity"
+            android:permission="android.permission.health.START_ONBOARDING">
+            <intent-filter>
+                <action android:name="android.health.connect.action.SHOW_ONBOARDING" />
+            </intent-filter>
+        </activity-alias>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -43,6 +75,17 @@
             android:exported="false"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+
+        <activity-alias
+            android:name="ViewHealthConnectPermissionsUsageActivity"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity=".app.health.HealthConnectPermissionsRationaleActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
     </application>
 
 </manifest>
