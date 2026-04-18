@@ -30,13 +30,14 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           if [ -n "$RELEASE_TAG" ]; then
-            release_json=$(gh release view "$RELEASE_TAG" --json tagName)
+            release_json=$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json tagName)
           else
-            release_json=$(gh release view --json tagName)
+            release_json=$(gh release view --repo "$GH_REPO" --json tagName)
           fi
           tag_name=$(printf '%s' "$release_json" | jq -r '.tagName')
           echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
@@ -44,11 +45,12 @@ jobs:
       - name: Download release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ steps.release.outputs.tag_name }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          gh release download "$TAG_NAME" \
+          gh release download "$TAG_NAME" --repo "$GH_REPO" \
             --pattern 'app-release.aab' \
             --pattern 'mapping.txt' \
             --dir release-assets
