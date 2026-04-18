@@ -6,7 +6,7 @@ on:
       tracks:
         description: Comma-separated Google Play tracks
         required: true
-        default: qa
+        default: internal
         type: string
       release_tag:
         description: Optional GitHub release tag to use instead of the latest release
