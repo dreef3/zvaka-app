@@ -150,6 +150,9 @@ jobs:
         run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Build release bundle and APK
+        env:
+          MODEL_IMPROVEMENT_API_BASE_URL: ${{ secrets.MODEL_IMPROVEMENT_API_BASE_URL }}
+          MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER: ${{ secrets.MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER }}
         run: |
           ./gradlew \
             -PappVersionCode=${{ steps.version.outputs.version_code }} \

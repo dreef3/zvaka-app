@@ -12,7 +12,7 @@ class ModelStorage(
     val modelDirectory: File
         get() = (
             modelDirectoryOverride
-                ?: File(requireNotNull(context).filesDir, "models")
+                ?: File(requireNotNull(context).cacheDir, "models")
             ).apply { mkdirs() }
 
     val defaultModelFile: File

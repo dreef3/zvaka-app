@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.notifications.needsNotificationPermission
 import com.dreef3.weightlossapp.app.sync.DriveAuthorizationOutcome
 import com.dreef3.weightlossapp.domain.model.ActivityLevel
@@ -67,18 +68,51 @@ fun OnboardingScreenRoute(
     var onboardingDriveMessage by remember { mutableStateOf<String?>(null) }
     var onboardingNotificationMessage by remember { mutableStateOf<String?>(null) }
     var onboardingHealthConnectMessage by remember { mutableStateOf<String?>(null) }
+    var completeAfterModelPreparation by remember { mutableStateOf(false) }
     val healthConnectAvailable = container.healthConnectCaloriesExporter.isAvailable()
     val healthConnectNeedsProviderSetup = container.healthConnectCaloriesExporter.needsProviderSetup()
+    val hasCompletedOnboarding by container.preferences.hasCompletedOnboarding.collectAsStateWithLifecycle(initialValue = false)
 
     LaunchedEffect(state.isCompleted) {
         if (state.isCompleted) onCompleted()
     }
 
+    LaunchedEffect(hasCompletedOnboarding, state.form.firstName, state.step) {
+        if (
+            hasCompletedOnboarding &&
+            state.form.firstName.isNotBlank() &&
+            state.step == OnboardingStep.DownloadIntro &&
+            !container.modelStorage.hasUsableModel(ModelDescriptors.gemma)
+        ) {
+            completeAfterModelPreparation = true
+            vm.requestModelDownload()
+        }
+    }
+
+    LaunchedEffect(completeAfterModelPreparation, state.step) {
+        if (completeAfterModelPreparation && state.step == OnboardingStep.Ready) {
+            completeAfterModelPreparation = false
+            onCompleted()
+        }
+    }
+
     suspend fun runRestore(authorization: DriveAuthorizationOutcome.Authorized) {
         val restoreSummary = container.googleDriveSyncManager.restoreBackup(authorization.accessToken)
+        container.preferences.recordDriveSyncSuccess(
+            syncedAtEpochMs = System.currentTimeMillis(),
+            backupFileId = container.preferences.readDriveSyncState().backupFileId,
+            accountEmail = authorization.accountEmail,
+        )
+        container.driveSyncScheduler.enablePeriodicSync()
         onboardingDriveMessage = "Restored backup from Google Drive."
         if (restoreSummary.hasProfile && restoreSummary.hasCompletedOnboarding) {
-            onCompleted()
+            if (container.modelStorage.hasUsableModel(com.dreef3.weightlossapp.app.media.ModelDescriptors.gemma)) {
+                onCompleted()
+            } else {
+                completeAfterModelPreparation = true
+                vm.requestModelDownload()
+                onboardingDriveMessage = "Restored backup from Google Drive. Downloading the local Gemma model in parallel."
+            }
         }
     }
 
