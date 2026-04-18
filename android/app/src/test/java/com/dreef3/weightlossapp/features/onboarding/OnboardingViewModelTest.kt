@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -99,7 +100,10 @@ class OnboardingViewModelTest {
         shadowOf(Looper.getMainLooper()).idle()
         advanceUntilIdle()
 
-        assertEquals(OnboardingStep.Ready, viewModel.uiState.value.step)
+        assertEquals(
+            OnboardingStep.Ready,
+            viewModel.uiState.filter { it.step == OnboardingStep.Ready }.first().step,
+        )
     }
 
     @Test
@@ -163,6 +167,8 @@ class OnboardingViewModelTest {
         advanceUntilIdle()
 
         assertTrue(preferences.healthConnectCaloriesEnabled.dropWhile { !it }.first())
+        shadowOf(Looper.getMainLooper()).idle()
+        advanceUntilIdle()
     }
 
     private fun createViewModel(

@@ -18,12 +18,6 @@ class SelectableDietChatEngineTest {
         val engine = SelectableDietChatEngine(
             preferences = preferences,
             gemmaEngine = FakeDietChatEngine("gemma"),
-            llamaCppEngines = mapOf(
-                CoachModel.SmolLm to FakeDietChatEngine("smollm"),
-                CoachModel.SmolLm2 to FakeDietChatEngine("smollm2"),
-                CoachModel.Qwen0_8b to FakeDietChatEngine("qwen0.8b"),
-                CoachModel.Qwen2b to FakeDietChatEngine("qwen2b"),
-            ),
         )
 
         val result = engine.sendMessage("hello", emptyList(), emptySnapshot()).getOrThrow()
@@ -32,45 +26,17 @@ class SelectableDietChatEngineTest {
     }
 
     @Test
-    fun usesSmolLmEngineWhenSmolLmSelected() = runBlocking {
+    fun usesGemmaEngineByDefault() = runBlocking {
         val preferences = testPreferences()
         preferences.reset()
-        preferences.setCoachModel(CoachModel.SmolLm)
         val engine = SelectableDietChatEngine(
             preferences = preferences,
             gemmaEngine = FakeDietChatEngine("gemma"),
-            llamaCppEngines = mapOf(
-                CoachModel.SmolLm to FakeDietChatEngine("smollm"),
-                CoachModel.SmolLm2 to FakeDietChatEngine("smollm2"),
-                CoachModel.Qwen0_8b to FakeDietChatEngine("qwen0.8b"),
-                CoachModel.Qwen2b to FakeDietChatEngine("qwen2b"),
-            ),
         )
 
         val result = engine.sendMessage("hello", emptyList(), emptySnapshot()).getOrThrow()
 
-        assertEquals("smollm", result)
-    }
-
-    @Test
-    fun usesQwen2bEngineWhenQwen2bSelected() = runBlocking {
-        val preferences = testPreferences()
-        preferences.reset()
-        preferences.setCoachModel(CoachModel.Qwen2b)
-        val engine = SelectableDietChatEngine(
-            preferences = preferences,
-            gemmaEngine = FakeDietChatEngine("gemma"),
-            llamaCppEngines = mapOf(
-                CoachModel.SmolLm to FakeDietChatEngine("smollm"),
-                CoachModel.SmolLm2 to FakeDietChatEngine("smollm2"),
-                CoachModel.Qwen0_8b to FakeDietChatEngine("qwen0.8b"),
-                CoachModel.Qwen2b to FakeDietChatEngine("qwen2b"),
-            ),
-        )
-
-        val result = engine.sendMessage("hello", emptyList(), emptySnapshot()).getOrThrow()
-
-        assertEquals("qwen2b", result)
+        assertEquals("gemma", result)
     }
 
     private fun emptySnapshot() = DietChatSnapshot(
@@ -86,7 +52,7 @@ class SelectableDietChatEngineTest {
     ).also { preferences ->
         runBlocking {
             preferences.reset()
-            preferences.setCoachModel(CoachModel.SmolLm)
+            preferences.setCoachModel(CoachModel.Gemma)
             preferences.readCoachModel()
         }
     }

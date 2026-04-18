@@ -540,33 +540,6 @@ fun ProfileEditScreen(
                 }
                 if (showAdvancedSettings) {
                     Text(
-                        text = "Photo estimation model",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        CalorieEstimationModel.entries.forEach { model ->
-                            FilterChip(
-                                selected = calorieModel == model,
-                                onClick = {
-                                    scope.launch {
-                                        container.preferences.setCalorieEstimationModel(model)
-                                        model.requiredModelDescriptors().forEach { descriptor ->
-                                            container.modelStorage.cleanupIncompleteModelFiles(descriptor)
-                                            if (!container.modelStorage.hasUsableModel(descriptor)) {
-                                                container.modelDownloadRepository.enqueueIfNeeded(descriptor)
-                                            }
-                                        }
-                                    }
-                                },
-                                label = { Text(model.displayName) },
-                            )
-                        }
-                    }
-                    Text(
                         text = if (selectedCalorieReady) {
                             "${selectedCalorieDescriptor.displayName} photo model is ready on this device."
                         } else if (selectedCalorieDownloadState.isDownloading) {
@@ -584,13 +557,6 @@ fun ProfileEditScreen(
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
-                    if (calorieModel != CalorieEstimationModel.Gemma) {
-                        Text(
-                            text = "This model uses GGUF via llama.cpp and requires a separate mmproj file for photo estimation.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                     OutlinedButton(
                         onClick = { calorieModel.requiredModelDescriptors().forEach(container.modelDownloadRepository::enqueueIfNeeded) },
                         enabled = !selectedCalorieReady && !selectedCalorieDownloadState.isDownloading,
@@ -603,31 +569,6 @@ fun ProfileEditScreen(
                                 "Download selected photo model"
                             },
                         )
-                    }
-                    Text(
-                        text = "Coach model",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        CoachModel.entries.forEach { model ->
-                            FilterChip(
-                                selected = coachModel == model,
-                                onClick = {
-                                    scope.launch {
-                                        container.preferences.setCoachModel(model)
-                                        container.modelStorage.cleanupIncompleteModelFiles(model.requiredModelDescriptor())
-                                        if (!container.modelStorage.hasUsableModel(model.requiredModelDescriptor())) {
-                                            container.modelDownloadRepository.enqueueIfNeeded(model.requiredModelDescriptor())
-                                        }
-                                    }
-                                },
-                                label = { Text(model.displayName) },
-                            )
-                        }
                     }
                     Text(
                         text = if (selectedCoachReady) {
@@ -647,43 +588,35 @@ fun ProfileEditScreen(
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
-                    if (coachModel != CoachModel.Gemma) {
-                        Text(
-                            text = "This model uses GGUF via llama.cpp for on-device chat. Tool-calling style meal edits remain stronger on the Gemma path.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        Text(
-                            text = "Gemma backend",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            GemmaBackend.entries.forEach { backend ->
-                                FilterChip(
-                                    selected = gemmaBackend == backend,
-                                    onClick = {
-                                        scope.launch {
-                                            container.preferences.setGemmaBackend(backend)
-                                        }
-                                    },
-                                    label = { Text(backend.displayName) },
-                                )
-                            }
+                    Text(
+                        text = "Gemma backend",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        GemmaBackend.entries.forEach { backend ->
+                            FilterChip(
+                                selected = gemmaBackend == backend,
+                                onClick = {
+                                    scope.launch {
+                                        container.preferences.setGemmaBackend(backend)
+                                    }
+                                },
+                                label = { Text(backend.displayName) },
+                            )
                         }
-                        Text(
-                            text = when (gemmaBackend) {
-                                GemmaBackend.CPU -> "CPU is slower, but it is the safer path on this device."
-                                GemmaBackend.GPU -> "GPU is faster when it works, but it can freeze or crash on unstable devices."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
+                    Text(
+                        text = when (gemmaBackend) {
+                            GemmaBackend.CPU -> "CPU is slower, but it is the safer path on this device."
+                            GemmaBackend.GPU -> "GPU is faster when it works, but it can freeze or crash on unstable devices."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     OutlinedButton(
                         onClick = { container.modelDownloadRepository.enqueueIfNeeded(selectedCoachDescriptor) },
                         enabled = !selectedCoachReady && !selectedCoachDownloadState.isDownloading,
@@ -760,24 +693,6 @@ fun ProfileEditScreen(
                         scope.launch {
                             isResetting = true
                             withContext(Dispatchers.IO) {
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.smolVlm.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.smolVlmMmproj.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.smolVlmTflite.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.smolLm.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.smolLm2.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.qwen0_8b.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.qwen0_8bMmproj.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.qwen2b.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.qwen2bMmproj.uniqueWorkName)
                                 WorkManager.getInstance(container.appContext)
                                     .cancelUniqueWork(ModelDescriptors.gemma.uniqueWorkName)
                                 WorkManager.getInstance(container.appContext).cancelAllWork()

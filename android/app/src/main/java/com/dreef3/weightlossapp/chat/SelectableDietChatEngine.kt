@@ -6,7 +6,6 @@ import com.dreef3.weightlossapp.data.preferences.AppPreferences
 class SelectableDietChatEngine(
     private val preferences: AppPreferences,
     private val gemmaEngine: DietChatEngine,
-    private val llamaCppEngines: Map<CoachModel, DietChatEngine>,
 ) : DietChatEngine {
     override suspend fun sendMessage(
         message: String,
@@ -16,7 +15,6 @@ class SelectableDietChatEngine(
         val selected = preferences.readCoachModel()
         val engine = when (selected) {
             CoachModel.Gemma -> gemmaEngine
-            else -> llamaCppEngines[selected] ?: gemmaEngine
         }
         return engine.sendMessage(message, history, snapshot)
     }

@@ -16,7 +16,7 @@ on:
       tracks:
         description: Comma-separated Google Play tracks
         required: true
-        default: qa
+        default: internal
         type: string
 
 concurrency:
@@ -187,4 +187,4 @@ jobs:
           packageName: com.dreef3.weightlossapp
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
           mappingFile: android/app/build/outputs/mapping/release/mapping.txt
-          tracks: ${{ inputs.tracks }}
+          track: ${{ inputs.tracks }}

@@ -16,4 +16,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "weight-loss-app"
 include(":app")
-include(":llamacpp")
