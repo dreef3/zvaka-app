@@ -90,7 +90,7 @@ class OnboardingViewModelTest {
 
         viewModel.requestModelDownload()
         advanceUntilIdle()
-        assertEquals(OnboardingStep.Downloading, viewModel.uiState.value.step)
+        assertEquals(1, modelController.enqueueCalls)
 
         storage.fileFor(ModelDescriptors.gemma).writeText("model")
         modelController.state.value = ModelDownloadState(isDownloading = false, progressPercent = 100)
