@@ -34,8 +34,8 @@ fun OnboardingFields(
     onWeightChanged: (String) -> Unit,
     onSexChanged: (Sex) -> Unit,
     onActivityLevelChanged: (ActivityLevel) -> Unit,
-    healthConnectAvailable: Boolean,
-    onHealthConnectCaloriesChanged: (Boolean) -> Unit,
+    healthConnectAvailable: Boolean = false,
+    onHealthConnectCaloriesChanged: ((Boolean) -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         var sexExpanded by remember { mutableStateOf(false) }
@@ -120,29 +120,31 @@ fun OnboardingFields(
                 }
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+        if (onHealthConnectCaloriesChanged != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("Sync calories to Health Connect")
-                Text(
-                    text = if (healthConnectAvailable) {
-                        "Opt in to publish each saved meal's calories to Health Connect. You can change this later in Settings."
-                    } else {
-                        "Health Connect is not available on this device right now."
-                    },
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Sync calories to Health Connect")
+                    Text(
+                        text = if (healthConnectAvailable) {
+                            "Opt in to publish each saved meal's calories to Health Connect. You can change this later in Settings."
+                        } else {
+                            "Health Connect is not available on this device right now."
+                        },
+                    )
+                }
+                Switch(
+                    checked = state.healthConnectCaloriesEnabled,
+                    enabled = healthConnectAvailable,
+                    onCheckedChange = onHealthConnectCaloriesChanged,
                 )
             }
-            Switch(
-                checked = state.healthConnectCaloriesEnabled,
-                enabled = healthConnectAvailable,
-                onCheckedChange = onHealthConnectCaloriesChanged,
-            )
         }
     }
 }

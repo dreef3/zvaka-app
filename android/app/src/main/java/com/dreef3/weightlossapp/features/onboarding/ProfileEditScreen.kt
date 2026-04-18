@@ -283,8 +283,6 @@ fun ProfileEditScreen(
             onWeightChanged = { value -> form = form.copy(weightKg = value.filter(Char::isDigit)) },
             onSexChanged = { form = form.copy(sex = it) },
             onActivityLevelChanged = { form = form.copy(activityLevel = it) },
-            healthConnectAvailable = healthConnectAvailable,
-            onHealthConnectCaloriesChanged = { enabled -> form = form.copy(healthConnectCaloriesEnabled = enabled) },
         )
         if (errors.isNotEmpty()) {
             errors.forEach { issue ->
