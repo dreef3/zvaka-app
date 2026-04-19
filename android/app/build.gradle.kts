@@ -170,7 +170,7 @@ android {
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.01.00")
-    val firebaseBom = platform("com.google.firebase:firebase-bom:34.4.0")
+    val firebaseBom = platform("com.google.firebase:firebase-bom:34.12.0")
     val roomVersion = "2.8.4"
     val healthConnectVersion = "1.1.0"
 
