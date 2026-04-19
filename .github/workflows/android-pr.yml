@@ -56,8 +56,6 @@ jobs:
         env:
           FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
         run: |
-          set -euo pipefail
-          test -n "$FIREBASE_WEB_API_KEY"
           envsubst '$FIREBASE_WEB_API_KEY' < app/google-services.json.template > app/google-services.json
 
       - name: Decode debug keystore
