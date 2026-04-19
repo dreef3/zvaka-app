@@ -1,6 +1,6 @@
 package com.dreef3.weightlossapp.features.summary
 
-import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -31,13 +31,17 @@ class TodaySummaryScreenTest {
                     ),
                     isEmpty = false,
                 ),
-                onNavigateToCapture = {},
-                onNavigateToTrends = {},
-                onNavigateToProfile = {},
+                onTakePhoto = {},
+                onOpenTrends = {},
+                onOpenHistoricalChat = {},
+                onOpenMealDebug = {},
+                onOpenManualEntry = {},
+                onRetryEntry = {},
             )
         }
 
-        composeRule.onNodeWithText("Today's calories: 2300 consumed / -300 remaining").assertExists()
-        composeRule.onNodeWithText("You are over budget.").assertExists()
+        composeRule.onNodeWithText("Today").assertIsDisplayed()
+        composeRule.onNodeWithText("300 kcal over").assertIsDisplayed()
+        composeRule.onNodeWithText("Consumed 2300 kcal").assertIsDisplayed()
     }
 }

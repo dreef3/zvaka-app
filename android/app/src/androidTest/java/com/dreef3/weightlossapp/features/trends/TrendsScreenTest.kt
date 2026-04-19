@@ -1,6 +1,6 @@
 package com.dreef3.weightlossapp.features.trends
 
-import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -35,11 +35,14 @@ class TrendsScreenTest {
                     ),
                 ),
                 onSelectWindow = {},
-                onBack = {},
+                onOpenHistoricalChat = {},
+                onOpenMealDebug = {},
+                onRetryEntry = {},
             )
         }
 
-        composeRule.onNodeWithText("Consumed: 4800").assertExists()
-        composeRule.onNodeWithText("Showing partial history for this window.").assertExists()
+        composeRule.onNodeWithText("Total eaten").assertIsDisplayed()
+        composeRule.onNodeWithText("4800").assertIsDisplayed()
+        composeRule.onNodeWithText("Showing partial history for this window.").assertIsDisplayed()
     }
 }

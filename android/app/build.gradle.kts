@@ -113,6 +113,9 @@ android {
             buildConfigField("boolean", "ENABLE_VERBOSE_LOGGING", "true")
             buildConfigField("String", "MODEL_IMPROVEMENT_DEBUG_TOKEN", modelImprovementDebugToken.asBuildConfigString())
             manifestPlaceholders["appUsesCleartextTraffic"] = "false"
+            ndk {
+                abiFilters += "x86_64"
+            }
             if (signingConfigs.findByName("customDebug") != null) {
                 signingConfig = signingConfigs.getByName("customDebug")
             }

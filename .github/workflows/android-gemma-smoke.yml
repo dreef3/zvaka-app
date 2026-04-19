@@ -77,24 +77,25 @@ jobs:
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true" \
             -o app/build/test-models/gemma-4-E2B-it.litertlm
 
-      - name: Extract LiteRT host JNI library
-        run: |
-          set -euo pipefail
-          AAR=$(find "$HOME/.gradle/caches/modules-2/files-2.1/com.google.ai.edge.litertlm/litertlm-android/0.10.0" -name '*.aar' | head -n1)
-          test -n "$AAR"
-          mkdir -p app/build/test-jni
-          unzip -p "$AAR" jni/x86_64/liblitertlm_jni.so > app/build/test-jni/liblitertlm_jni.so
-
       - name: Run deterministic chat tests
         run: ./gradlew testDebugUnitTest --no-daemon --tests "com.dreef3.weightlossapp.chat.*" --tests "com.dreef3.weightlossapp.inference.*"
 
-      - name: Run real-model chat smoke tests
-        env:
-          GEMMA_MODEL_PATH: ${{ github.workspace }}/android/app/build/test-models/gemma-4-E2B-it.litertlm
-          LITERTLM_JNI_PATH: ${{ github.workspace }}/android/app/build/test-jni/liblitertlm_jni.so
-          RUN_REAL_GEMMA_TESTS: "true"
-        run: |
-          ./gradlew testDebugUnitTest --no-daemon --tests "com.dreef3.weightlossapp.chat.LiteRtDietChatEngineRealModelTest"
+      - name: Run real-model chat smoke tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            ./gradlew installDebug installDebugAndroidTest --no-daemon
+            adb shell run-as com.dreef3.weightlossapp.debug mkdir -p cache/models
+            adb shell "run-as com.dreef3.weightlossapp.debug sh -c 'cat > cache/models/gemma-4-E2B-it.litertlm'" < app/build/test-models/gemma-4-E2B-it.litertlm
+            ./gradlew connectedDebugAndroidTest --no-daemon \
+              -Pandroid.testInstrumentationRunnerArguments.class=com.dreef3.weightlossapp.chat.LiteRtDietChatEngineInstrumentedSmokeTest \
+              -Pandroid.testInstrumentationRunnerArguments.runRealGemmaTests=true \
+              -Pandroid.testInstrumentationRunnerArguments.gemmaModelPath=/data/user/0/com.dreef3.weightlossapp.debug/cache/models/gemma-4-E2B-it.litertlm
 
       - name: Upload test reports
         if: always()
@@ -105,3 +106,5 @@ jobs:
           path: |
             android/app/build/reports/tests/testDebugUnitTest
             android/app/build/test-results/testDebugUnitTest
+            android/app/build/reports/androidTests/connected
+            android/app/build/outputs/androidTest-results/connected
