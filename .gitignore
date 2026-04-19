@@ -6,8 +6,9 @@ build/
 local.properties
 .env.local
 
-# Log/OS Files
-*.log
+# Google Services (e.g. APIs or Firebase) – rendered from template, never committed
+android/app/google-services.json
+client_secret_*.json
 
 # Android Studio generated files and folders
 captures/
@@ -28,9 +29,6 @@ render.experimental.xml
 *.jks
 *.keystore
 android/signing.properties
-
-# Google Services (e.g. APIs or Firebase)
-client_secret_*.json
 
 # Android Profiling
 *.hprof
