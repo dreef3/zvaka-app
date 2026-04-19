@@ -95,6 +95,12 @@ class AppPreferences(
             )
         }
 
+    val hasCompletedPhotoNormalizationMigration: Flow<Boolean> = dataStore.data
+        .catch {
+            if (it is IOException) emit(emptyPreferences()) else throw it
+        }
+        .map { prefs -> prefs[Keys.HasCompletedPhotoNormalizationMigration] ?: false }
+
     suspend fun setCompletedOnboarding(value: Boolean) {
         if (hasCompletedOnboarding.first() == value) return
         dataStore.edit { prefs ->
@@ -149,6 +155,13 @@ class AppPreferences(
             prefs[Keys.HealthConnectCaloriesEnabled] = value
         }
         driveSyncTrigger.requestSync("preferences:health_connect_calories")
+    }
+
+    suspend fun setPhotoNormalizationMigrationCompleted(value: Boolean) {
+        if (hasCompletedPhotoNormalizationMigration.first() == value) return
+        dataStore.edit { prefs ->
+            prefs[Keys.HasCompletedPhotoNormalizationMigration] = value
+        }
     }
     suspend fun readCalorieEstimationModel(): CalorieEstimationModel =
         calorieEstimationModel.map { it }.catch {
@@ -271,6 +284,7 @@ class AppPreferences(
         val CalorieEstimationModel = stringPreferencesKey("calorie_estimation_model")
         val TrainingDataSharingEnabled = booleanPreferencesKey("training_data_sharing_enabled")
         val HealthConnectCaloriesEnabled = booleanPreferencesKey("health_connect_calories_enabled")
+        val HasCompletedPhotoNormalizationMigration = booleanPreferencesKey("photo_normalization_migration_completed")
         val GoogleDriveSyncEnabled = booleanPreferencesKey("google_drive_sync_enabled")
         val GoogleDriveAccountEmail = stringPreferencesKey("google_drive_account_email")
         val GoogleDriveBackupFileId = stringPreferencesKey("google_drive_backup_file_id")

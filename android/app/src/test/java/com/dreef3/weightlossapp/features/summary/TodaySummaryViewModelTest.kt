@@ -1,5 +1,7 @@
 package com.dreef3.weightlossapp.features.summary
 
+import android.content.ContextWrapper
+import com.dreef3.weightlossapp.app.media.PhotoStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.chat.ChatRole
 import com.dreef3.weightlossapp.chat.CoachChatSession
@@ -78,6 +80,7 @@ class TodaySummaryViewModelTest {
                 repository = foodRepository,
                 scheduler = NoopPhotoScheduler(),
                 localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
+                photoStorage = FakePhotoStorage(),
             ),
             saveManualCaloriesUseCase = SaveManualCaloriesUseCase(foodRepository),
         )
@@ -110,6 +113,10 @@ class TodaySummaryViewModelTest {
 
 private class NoopPhotoScheduler : PhotoProcessingScheduler {
     override fun enqueue(entryId: Long, imagePath: String, capturedAtEpochMs: Long) = Unit
+}
+
+private class FakePhotoStorage : PhotoStorage(ContextWrapper(null)) {
+    override fun normalizePhoto(path: String): Boolean = true
 }
 
 private class SummaryFakeFoodEntryRepository : FoodEntryRepository {

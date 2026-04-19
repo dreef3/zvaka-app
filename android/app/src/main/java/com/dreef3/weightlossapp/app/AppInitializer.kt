@@ -26,6 +26,7 @@ object AppInitializer {
                 container.photoStorage.ensureDirectories()
                 container.modelStorage.modelDirectory.mkdirs()
                 container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.gemma)
+                normalizeStoredPhotosIfNeeded(container)
                 recoverStalePhotoProcessingEntries(container)
                 container.modelStorage.logState(tag = TAG, model = ModelDescriptors.gemma)
                 val driveSyncEnabled = runBlocking { container.preferences.readDriveSyncState().isEnabled }
@@ -101,6 +102,31 @@ object AppInitializer {
             if (staleEntries.isNotEmpty()) {
                 debugLog("Recovered ${staleEntries.size} stale processing photo entries")
             }
+        }
+    }
+
+    private fun normalizeStoredPhotosIfNeeded(container: AppContainer) {
+        val alreadyCompleted = runBlocking {
+            container.preferences.hasCompletedPhotoNormalizationMigration.first()
+        }
+        if (alreadyCompleted) return
+
+        val photoFiles = container.photoStorage.listPhotoFiles()
+        var normalizedCount = 0
+        photoFiles.forEach { file ->
+            runCatching {
+                if (container.photoStorage.normalizePhoto(file.absolutePath)) {
+                    normalizedCount += 1
+                }
+            }.onFailure { error ->
+                debugLog("Photo normalization failed for ${file.name}: ${error.message}")
+            }
+        }
+        runBlocking {
+            container.preferences.setPhotoNormalizationMigrationCompleted(true)
+        }
+        if (normalizedCount > 0) {
+            debugLog("Normalized $normalizedCount stored meal photos")
         }
     }
 

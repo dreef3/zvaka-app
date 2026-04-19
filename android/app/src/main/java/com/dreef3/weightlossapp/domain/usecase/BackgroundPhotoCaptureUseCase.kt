@@ -1,6 +1,7 @@
 package com.dreef3.weightlossapp.domain.usecase
 
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
+import com.dreef3.weightlossapp.app.media.PhotoStorage
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntry
@@ -13,8 +14,10 @@ class BackgroundPhotoCaptureUseCase(
     private val repository: FoodEntryRepository,
     private val scheduler: PhotoProcessingScheduler,
     private val localDateProvider: LocalDateProvider,
+    private val photoStorage: PhotoStorage,
 ) {
     suspend fun enqueue(imagePath: String, capturedAt: Instant): Long {
+        photoStorage.normalizePhoto(imagePath)
         val pendingEntry = FoodEntry(
             capturedAt = capturedAt,
             entryDate = localDateProvider.dateFor(capturedAt),
@@ -38,6 +41,7 @@ class BackgroundPhotoCaptureUseCase(
     }
 
     suspend fun retry(entry: FoodEntry) {
+        photoStorage.normalizePhoto(entry.imagePath)
         val retryingEntry = entry.copy(
             estimatedCalories = 0,
             finalCalories = 0,

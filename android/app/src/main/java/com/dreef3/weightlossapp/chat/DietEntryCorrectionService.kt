@@ -74,6 +74,12 @@ class DietEntryCorrectionService(
             ?.takeIf { it.isNotBlank() }
             ?.let(LocalDate::parse)
             ?: localDateProvider.today()
+        if (entryDate.isAfter(localDateProvider.today())) {
+            return mapOf(
+                "success" to false,
+                "message" to "I can't log meals in the future.",
+            )
+        }
         val timestamp = Instant.now()
 
         val entry = FoodEntry(

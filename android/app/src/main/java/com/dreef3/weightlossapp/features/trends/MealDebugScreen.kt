@@ -9,9 +9,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,14 +30,18 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -62,6 +68,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -69,9 +77,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.domain.model.FoodEntry
+import com.dreef3.weightlossapp.domain.model.FoodEntrySource
+import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import com.dreef3.weightlossapp.domain.repository.FoodEntryRepository
 import com.dreef3.weightlossapp.domain.usecase.BackgroundPhotoCaptureUseCase
+import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
 import java.io.File
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
@@ -99,6 +110,7 @@ class MealDebugViewModel(
     private val entryId: Long,
     private val foodEntryRepository: FoodEntryRepository,
     private val backgroundPhotoCaptureUseCase: BackgroundPhotoCaptureUseCase,
+    private val updateFoodEntryUseCase: UpdateFoodEntryUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MealDebugUiState())
     val uiState: StateFlow<MealDebugUiState> = _uiState.asStateFlow()
@@ -131,6 +143,22 @@ class MealDebugViewModel(
             _uiState.update { it.copy(isDeleting = false, isDeleted = true) }
         }
     }
+
+    fun saveEdits(entry: FoodEntry, description: String, calories: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            updateFoodEntryUseCase(
+                entry.copy(
+                    detectedFoodLabel = description.trim().ifBlank { entry.detectedFoodLabel ?: "Meal" },
+                    estimatedCalories = entry.estimatedCalories.takeIf { it > 0 } ?: calories,
+                    finalCalories = calories,
+                    source = FoodEntrySource.UserCorrected,
+                    confirmationStatus = ConfirmationStatus.NotRequired,
+                    entryStatus = FoodEntryStatus.Ready,
+                    confidenceNotes = "Edited manually.",
+                ),
+            )
+        }
+    }
 }
 
 class MealDebugViewModelFactory(
@@ -143,6 +171,7 @@ class MealDebugViewModelFactory(
             entryId = entryId,
             foodEntryRepository = container.foodEntryRepository,
             backgroundPhotoCaptureUseCase = container.backgroundPhotoCaptureUseCase,
+            updateFoodEntryUseCase = container.updateFoodEntryUseCase,
         ) as T
     }
 }
@@ -170,6 +199,7 @@ fun MealDebugScreenRoute(
             viewModel.retryEntry()
             onRetry()
         },
+        onSaveEdits = viewModel::saveEdits,
         onDelete = { viewModel.deleteEntry() },
         onBack = onBack,
     )
@@ -179,11 +209,13 @@ fun MealDebugScreenRoute(
 fun MealDebugScreen(
     state: MealDebugUiState,
     onRetry: () -> Unit,
+    onSaveEdits: (FoodEntry, String, Int) -> Unit,
     onDelete: () -> Unit,
     onBack: () -> Unit,
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPhotoViewer by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -209,6 +241,19 @@ fun MealDebugScreen(
             imagePath = state.entry!!.imagePath,
             onDismiss = { showPhotoViewer = false },
         )
+    }
+
+    state.entry?.let { entry ->
+        if (showEditDialog) {
+            EditEntryDialog(
+                entry = entry,
+                onDismiss = { showEditDialog = false },
+                onSave = { description, calories ->
+                    showEditDialog = false
+                    onSaveEdits(entry, description, calories)
+                },
+            )
+        }
     }
 
     Column(
@@ -237,6 +282,7 @@ fun MealDebugScreen(
                 entry = entry,
                 onRetry = onRetry,
                 onDelete = { showDeleteDialog = true },
+                onEdit = { showEditDialog = true },
                 onViewPhoto = { showPhotoViewer = true },
             )
         }
@@ -262,6 +308,7 @@ private fun EntryDetailCard(
     entry: FoodEntry,
     onRetry: () -> Unit,
     onDelete: () -> Unit,
+    onEdit: () -> Unit,
     onViewPhoto: () -> Unit,
 ) {
     val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = entry.imagePath) {
@@ -347,35 +394,84 @@ private fun EntryDetailCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
             ) {
-                OutlinedButton(
+                OutlinedIconButton(
                     onClick = onRetry,
-                    modifier = Modifier.weight(1f),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Refresh,
-                        contentDescription = null,
+                        contentDescription = "Retry estimation",
                         modifier = Modifier.size(18.dp),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Retry")
                 }
-                OutlinedButton(
+                OutlinedIconButton(
+                    onClick = onEdit,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Edit,
+                        contentDescription = "Edit entry",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                OutlinedIconButton(
                     onClick = onDelete,
-                    modifier = Modifier.weight(1f),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Delete,
-                        contentDescription = null,
+                        contentDescription = "Delete entry",
                         modifier = Modifier.size(18.dp),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Delete")
                 }
             }
         }
     }
+}
+
+@Composable
+private fun EditEntryDialog(
+    entry: FoodEntry,
+    onDismiss: () -> Unit,
+    onSave: (String, Int) -> Unit,
+) {
+    var description by remember(entry.id) { mutableStateOf(entry.detectedFoodLabel.orEmpty()) }
+    var caloriesText by remember(entry.id) { mutableStateOf(entry.finalCalories.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit meal") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = caloriesText,
+                    onValueChange = { value -> caloriesText = value.filter(Char::isDigit) },
+                    label = { Text("Calories") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    caloriesText.toIntOrNull()?.let { calories ->
+                        if (description.isNotBlank()) onSave(description, calories)
+                    }
+                },
+                enabled = description.isNotBlank() && caloriesText.toIntOrNull() != null,
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
@@ -394,56 +490,93 @@ private fun FullSizePhotoViewer(
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(androidx.compose.ui.graphics.Color.Black),
-        contentAlignment = Alignment.Center,
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        bitmap?.let { loadedBitmap ->
-            Image(
-                bitmap = loadedBitmap.asImageBitmap(),
-                contentDescription = "Full size meal photo",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 5f)
-                            if (scale > 1f) {
-                                offset = Offset(
-                                    x = (offset.x + pan.x).coerceIn(-300f, 300f),
-                                    y = (offset.y + pan.y).coerceIn(-300f, 300f),
-                                )
-                            } else {
-                                offset = Offset.Zero
-                            }
-                        }
-                    }
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        translationX = offset.x,
-                        translationY = offset.y,
-                    ),
-                contentScale = ContentScale.Fit,
-            )
-        }
-
-        Row(
+        Box(
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black),
+            contentAlignment = Alignment.Center,
         ) {
-            if (bitmap != null && !isSaving) {
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                val maxPanX = constraints.maxWidth / 2f
+                val maxPanY = constraints.maxHeight / 2f
+                bitmap?.let { loadedBitmap ->
+                    Image(
+                        bitmap = loadedBitmap.asImageBitmap(),
+                        contentDescription = "Full size meal photo",
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth()
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    if (scale > 1f) {
+                                        offset = Offset(
+                                            x = (offset.x + pan.x).coerceIn(-maxPanX, maxPanX),
+                                            y = (offset.y + pan.y).coerceIn(-maxPanY, maxPanY),
+                                        )
+                                    } else {
+                                        offset = Offset.Zero
+                                    }
+                                }
+                            }
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x,
+                                translationY = offset.y,
+                            ),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (bitmap != null && !isSaving) {
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                isSaving = true
+                                saveBitmapToGallery(context, bitmap!!, imagePath)
+                                isSaving = false
+                            }
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
+                                RoundedCornerShape(24.dp),
+                            ),
+                    ) {
+                        Icon(
+                            Icons.Filled.Download,
+                            contentDescription = "Save to gallery",
+                            tint = androidx.compose.ui.graphics.Color.White,
+                        )
+                    }
+                }
+                if (isSaving) {
+                    Text(
+                        "Saving...",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        modifier = Modifier
+                            .align(Alignment.CenterVertically)
+                            .padding(end = 8.dp),
+                    )
+                }
                 IconButton(
-                    onClick = {
-                        scope.launch {
-                            isSaving = true
-                            saveBitmapToGallery(context, bitmap!!, imagePath)
-                            isSaving = false
-                        }
-                    },
+                    onClick = onDismiss,
                     modifier = Modifier
                         .size(48.dp)
                         .background(
@@ -452,35 +585,11 @@ private fun FullSizePhotoViewer(
                         ),
                 ) {
                     Icon(
-                        Icons.Filled.Download,
-                        contentDescription = "Save to gallery",
+                        Icons.Filled.Close,
+                        contentDescription = "Close",
                         tint = androidx.compose.ui.graphics.Color.White,
                     )
                 }
-            }
-            if (isSaving) {
-                Text(
-                    "Saving...",
-                    color = androidx.compose.ui.graphics.Color.White,
-                    modifier = Modifier
-                        .align(Alignment.CenterVertically)
-                        .padding(end = 8.dp),
-                )
-            }
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
-                        RoundedCornerShape(24.dp),
-                    ),
-            ) {
-                Icon(
-                    Icons.Filled.Close,
-                    contentDescription = "Close",
-                    tint = androidx.compose.ui.graphics.Color.White,
-                )
             }
         }
     }

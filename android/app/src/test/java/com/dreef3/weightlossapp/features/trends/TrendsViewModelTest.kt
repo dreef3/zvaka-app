@@ -1,5 +1,7 @@
 package com.dreef3.weightlossapp.features.trends
 
+import android.content.ContextWrapper
+import com.dreef3.weightlossapp.app.media.PhotoStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.chat.ChatRole
 import com.dreef3.weightlossapp.chat.CoachChatSession
@@ -80,6 +82,7 @@ class TrendsViewModelTest {
                 repository = TrendsFakeFoodEntryRepository(entries),
                 scheduler = NoopTrendPhotoScheduler(),
                 localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
+                photoStorage = FakePhotoStorage(),
             ),
         )
 
@@ -127,6 +130,10 @@ private class TrendsFakeCoachChatRepository : CoachChatRepository {
         imagePath: String?,
     ): Long = 1L
     override suspend fun updateSessionSummary(sessionId: Long, summary: String) = Unit
+}
+
+private class FakePhotoStorage : PhotoStorage(ContextWrapper(null)) {
+    override fun normalizePhoto(path: String): Boolean = true
 }
 
 private class TrendsFakeFoodEntryRepository(

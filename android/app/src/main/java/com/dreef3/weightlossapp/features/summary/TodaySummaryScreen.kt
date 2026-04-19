@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -54,6 +55,8 @@ import com.dreef3.weightlossapp.domain.model.FoodEntry
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun TodaySummaryScreenRoute(
@@ -303,10 +306,12 @@ private fun HistoryEntryCard(
     onClick: () -> Unit,
     onRetryEntry: () -> Unit,
 ) {
-    val bitmap = remember(entry.imagePath) {
-        entry.imagePath.takeIf { it.isNotBlank() && File(it).exists() }?.let {
-            val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-            BitmapFactory.decodeFile(it, opts)
+    val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = entry.imagePath) {
+        value = withContext(Dispatchers.IO) {
+            entry.imagePath.takeIf { it.isNotBlank() && File(it).exists() }?.let {
+                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                BitmapFactory.decodeFile(it, opts)
+            }
         }
     }
     val formatter = remember { DateTimeFormatter.ofPattern("MMM d") }
@@ -322,14 +327,14 @@ private fun HistoryEntryCard(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (bitmap != null) {
+            bitmap?.let { loadedBitmap ->
                 Image(
-                    bitmap = bitmap.asImageBitmap(),
+                    bitmap = loadedBitmap.asImageBitmap(),
                     contentDescription = "Meal photo",
                     modifier = Modifier.size(72.dp),
                     contentScale = ContentScale.Crop,
                 )
-            } else {
+            } ?: run {
                 Card(
                     modifier = Modifier.size(72.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -414,10 +419,12 @@ private fun ManualEntryCard(
     onOpenManualEntry: () -> Unit,
     onRetryEntry: () -> Unit,
 ) {
-    val bitmap = remember(entry.imagePath) {
-        entry.imagePath.takeIf { File(it).exists() }?.let {
-            val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-            BitmapFactory.decodeFile(it, opts)
+    val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = entry.imagePath) {
+        value = withContext(Dispatchers.IO) {
+            entry.imagePath.takeIf { File(it).exists() }?.let {
+                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                BitmapFactory.decodeFile(it, opts)
+            }
         }
     }
     Card(
@@ -442,9 +449,9 @@ private fun ManualEntryCard(
                     )
                 }
             }
-            if (bitmap != null) {
+            bitmap?.let { loadedBitmap ->
                 Image(
-                    bitmap = bitmap.asImageBitmap(),
+                    bitmap = loadedBitmap.asImageBitmap(),
                     contentDescription = "Retained food photo",
                     modifier = Modifier.fillMaxWidth().height(180.dp),
                     contentScale = ContentScale.Crop,

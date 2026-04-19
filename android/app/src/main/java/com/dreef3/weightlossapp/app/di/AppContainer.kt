@@ -7,6 +7,7 @@ import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.chat.DietChatEngine
 import com.dreef3.weightlossapp.chat.DietEntryCorrectionService
+import com.dreef3.weightlossapp.chat.DietEntryInspectionService
 import com.dreef3.weightlossapp.chat.LiteRtDietChatEngine
 import com.dreef3.weightlossapp.chat.SelectableDietChatEngine
 import com.dreef3.weightlossapp.app.media.ModelDownloadRepository
@@ -98,6 +99,7 @@ class AppContainer private constructor(context: Context) {
         repository = foodEntryRepository,
         scheduler = photoProcessingScheduler,
         localDateProvider = localDateProvider,
+        photoStorage = photoStorage,
     )
     val saveManualCaloriesUseCase = SaveManualCaloriesUseCase(foodEntryRepository)
     val dietEntryCorrectionService = DietEntryCorrectionService(
@@ -105,7 +107,6 @@ class AppContainer private constructor(context: Context) {
         updateFoodEntryUseCase = updateFoodEntryUseCase,
         localDateProvider = localDateProvider,
     )
-
     val gemmaFoodEstimationEngine: FoodEstimationEngine = LiteRtFoodEstimationEngine(
         modelFile = modelStorage.defaultModelFile,
     )
@@ -113,9 +114,14 @@ class AppContainer private constructor(context: Context) {
         preferences = preferences,
         gemmaEngine = gemmaFoodEstimationEngine,
     )
+    val dietEntryInspectionService = DietEntryInspectionService(
+        foodEntryRepository = foodEntryRepository,
+        foodEstimationEngine = foodEstimationEngine,
+    )
     val gemmaDietChatEngine: DietChatEngine = LiteRtDietChatEngine(
         modelFile = modelStorage.defaultModelFile,
         correctionService = dietEntryCorrectionService,
+        inspectionService = dietEntryInspectionService,
         backendPreferenceProvider = preferences::readGemmaBackend,
     )
     val dietChatEngine: DietChatEngine = SelectableDietChatEngine(

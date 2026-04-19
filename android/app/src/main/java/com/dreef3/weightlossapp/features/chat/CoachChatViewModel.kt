@@ -143,6 +143,7 @@ class CoachChatViewModel(
                     requireNotNull(input) { "Unable to open selected image." }
                     targetFile.outputStream().use { output -> input.copyTo(output) }
                 }
+                container.photoStorage.normalizePhoto(targetFile.absolutePath)
                 _uiState.value = _uiState.value.copy(attachedImagePath = targetFile.absolutePath)
             }.onFailure { throwable ->
                 Log.e(TAG, "attachImage failed", throwable)
@@ -517,7 +518,6 @@ class CoachChatViewModel(
 
         return null
     }
-
 
     private fun cleanDescription(raw: String): String? {
         val stripped = raw

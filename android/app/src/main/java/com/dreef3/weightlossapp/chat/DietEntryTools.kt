@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 class DietEntryTools(
     private val snapshotProvider: () -> DietChatSnapshot,
     private val correctionService: DietEntryCorrectionService,
+    private val inspectionService: DietEntryInspectionService,
 ) : ToolSet {
 
     @Tool(description = "Get the user's current calorie summary for today.")
@@ -88,6 +89,30 @@ class DietEntryTools(
     }
 
     @Tool(
+        description = "Inspect a specific saved food entry by entryId. Returns saved details and, if the entry has a saved photo, a fresh photo-based estimate to help answer questions about that exact historical meal.",
+    )
+    fun inspectEntry(
+        @ToolParam(description = "The exact entryId of the saved food entry to inspect.") entryId: Int,
+    ): Map<String, Any?> = runBlocking {
+        inspectionService.inspectEntry(entryId.toLong())
+    }
+
+    @Tool(
+        description = "Re-estimate a specific saved food entry from its saved photo. Optionally update the entry description first when the user clarifies what the photographed meal actually was.",
+    )
+    fun reestimateEntry(
+        @ToolParam(description = "The exact entryId of the saved food entry to re-estimate.") entryId: Int,
+        @ToolParam(description = "Updated meal description to use as context for the re-estimate. Use empty string if unchanged.") correctedDescription: String,
+        @ToolParam(description = "Short reason or user request that explains the re-estimate.") reason: String,
+    ): Map<String, Any?> = runBlocking {
+        inspectionService.reestimateEntry(
+            entryId = entryId.toLong(),
+            correctedDescription = correctedDescription.takeIf { it.isNotBlank() },
+            reason = reason,
+        )
+    }
+
+    @Tool(
         description = "Log a new food entry without a photo when the user says what they ate and provides calories. Never ask for another description if the user already named the meal. Names like 'Mac Menu', 'potato burek', or 'yogurt with berries' are already complete meal names. Use today's date unless the user clearly specifies another ISO date.",
     )
     fun logFoodEntry(
@@ -136,6 +161,13 @@ class DietEntryTools(
             reason = reason,
         )
     }
+
+    @Tool(description = "Alias for inspectEntry (snake_case)")
+    fun inspect_entry(entry_id: Int): Map<String, Any?> = inspectEntry(entry_id)
+
+    @Tool(description = "Alias for reestimateEntry (snake_case)")
+    fun reestimate_entry(entry_id: Int, corrected_description: String, reason: String): Map<String, Any?> =
+        reestimateEntry(entry_id, corrected_description, reason)
 
     @Tool(description = "Alias for logFoodEntry (snake_case)")
     fun log_food_entry(meal_name: String, calories: Int, date_iso: String, reason: String): Map<String, Any?> {

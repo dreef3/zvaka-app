@@ -1,5 +1,7 @@
 package com.dreef3.weightlossapp.domain.usecase
 
+import android.content.ContextWrapper
+import com.dreef3.weightlossapp.app.media.PhotoStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
@@ -27,6 +29,7 @@ class BackgroundPhotoCaptureUseCaseTest {
             repository = repository,
             scheduler = scheduler,
             localDateProvider = LocalDateProvider(ZoneId.of("UTC")),
+            photoStorage = FakePhotoStorage(),
         )
 
         val capturedAt = Instant.parse("2026-04-03T10:00:00Z")
@@ -81,4 +84,8 @@ private class FakeScheduler : PhotoProcessingScheduler {
         this.entryId = entryId
         this.imagePath = imagePath
     }
+}
+
+private class FakePhotoStorage : PhotoStorage(ContextWrapper(null)) {
+    override fun normalizePhoto(path: String): Boolean = true
 }
