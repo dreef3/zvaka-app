@@ -59,6 +59,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 private enum class PendingDriveAction {
@@ -125,9 +126,13 @@ fun ProfileEditScreen(
     ) { granted ->
         scope.launch {
             val allowed = granted.containsAll(container.healthConnectCaloriesExporter.requiredPermissions())
+            val wasEnabled = container.preferences.healthConnectCaloriesEnabled.first()
             container.preferences.setHealthConnectCaloriesEnabled(allowed)
             healthConnectStatusMessage = if (allowed) {
-                "Health Connect calorie sync is on. New and edited meals will be published there."
+                if (!wasEnabled) {
+                    container.healthConnectBackfillService.backfillRecentEntries()
+                }
+                "Health Connect calorie sync is on. New and edited meals will be published there, and the last 7 days were backfilled."
             } else {
                 "Health Connect permission was not granted, so calorie sync stays off."
             }
@@ -159,8 +164,20 @@ fun ProfileEditScreen(
 
             PendingDriveAction.Restore -> {
                 val restoreSummary = container.googleDriveSyncManager.restoreBackup(authorization.accessToken)
-                driveStatusMessage = "Restored the latest backup from Google Drive."
-                onRestoreCompleted(restoreSummary.hasProfile && restoreSummary.hasCompletedOnboarding)
+                container.preferences.recordDriveSyncSuccess(
+                    syncedAtEpochMs = System.currentTimeMillis(),
+                    backupFileId = container.preferences.readDriveSyncState().backupFileId,
+                    accountEmail = authorization.accountEmail,
+                )
+                container.driveSyncScheduler.enablePeriodicSync()
+                val hasGemmaModel = container.modelStorage.hasUsableModel(ModelDescriptors.gemma)
+                if (restoreSummary.hasProfile && restoreSummary.hasCompletedOnboarding && !hasGemmaModel) {
+                    container.modelDownloadRepository.enqueueIfNeeded(ModelDescriptors.gemma)
+                    driveStatusMessage = "Restored the latest backup from Google Drive. Gemma model download started in the background."
+                } else {
+                    driveStatusMessage = "Restored the latest backup from Google Drive."
+                }
+                onRestoreCompleted(restoreSummary.hasProfile && restoreSummary.hasCompletedOnboarding && hasGemmaModel)
             }
         }
     }
@@ -384,8 +401,12 @@ fun ProfileEditScreen(
                                     healthConnectStatusMessage = "Health Connect calorie sync is off. Existing records remain in Health Connect."
                                 } else if (healthConnectAvailable) {
                                     if (container.healthConnectCaloriesExporter.hasWritePermission()) {
+                                        val wasEnabled = container.preferences.healthConnectCaloriesEnabled.first()
                                         container.preferences.setHealthConnectCaloriesEnabled(true)
-                                        healthConnectStatusMessage = "Health Connect permission is already granted. New and edited meals will be published there."
+                                        if (!wasEnabled) {
+                                            container.healthConnectBackfillService.backfillRecentEntries()
+                                        }
+                                        healthConnectStatusMessage = "Health Connect permission is already granted. New and edited meals will be published there, and the last 7 days were backfilled."
                                     } else {
                                         healthConnectStatusMessage = null
                                         healthConnectPermissionLauncher.launch(container.healthConnectCaloriesExporter.requiredPermissions())
@@ -539,18 +560,30 @@ fun ProfileEditScreen(
                     Text(if (showAdvancedSettings) "Hide advanced settings" else "Show advanced settings")
                 }
                 if (showAdvancedSettings) {
+                    val gemmaReady = selectedCoachReady && selectedCalorieReady
+                    val gemmaDownloading = selectedCoachDownloadState.isDownloading || selectedCalorieDownloadState.isDownloading
+                    val gemmaProgress = listOfNotNull(
+                        selectedCoachDownloadState.progressPercent,
+                        selectedCalorieDownloadState.progressPercent,
+                    ).maxOrNull()
+                    val gemmaError = selectedCoachDownloadState.errorMessage ?: selectedCalorieDownloadState.errorMessage
                     Text(
-                        text = if (selectedCalorieReady) {
-                            "${selectedCalorieDescriptor.displayName} photo model is ready on this device."
-                        } else if (selectedCalorieDownloadState.isDownloading) {
-                            "Downloading ${selectedCalorieDescriptor.displayName}... ${selectedCalorieDownloadState.progressPercent ?: 0}%"
+                        text = "Local Gemma model",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = if (gemmaReady) {
+                            "${selectedCoachDescriptor.displayName} is ready on this device for both coaching and photo estimation."
+                        } else if (gemmaDownloading) {
+                            "Downloading ${selectedCoachDescriptor.displayName}... ${gemmaProgress ?: 0}%"
                         } else {
-                            "${selectedCalorieDescriptor.displayName} photo model is not downloaded yet."
+                            "${selectedCoachDescriptor.displayName} is not downloaded yet."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    selectedCalorieDownloadState.errorMessage?.let { error ->
+                    gemmaError?.let { error ->
                         Text(
                             text = error,
                             style = MaterialTheme.typography.bodySmall,
@@ -558,34 +591,16 @@ fun ProfileEditScreen(
                         )
                     }
                     OutlinedButton(
-                        onClick = { calorieModel.requiredModelDescriptors().forEach(container.modelDownloadRepository::enqueueIfNeeded) },
-                        enabled = !selectedCalorieReady && !selectedCalorieDownloadState.isDownloading,
+                        onClick = { container.modelDownloadRepository.enqueueIfNeeded(ModelDescriptors.gemma) },
+                        enabled = !gemmaReady && !gemmaDownloading,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
-                            if (selectedCalorieDownloadState.isDownloading) {
-                                "Downloading photo model..."
+                            if (gemmaDownloading) {
+                                "Downloading Gemma model..."
                             } else {
-                                "Download selected photo model"
+                                "Download Gemma model"
                             },
-                        )
-                    }
-                    Text(
-                        text = if (selectedCoachReady) {
-                            "${selectedCoachDescriptor.displayName} is ready on this device."
-                        } else if (selectedCoachDownloadState.isDownloading) {
-                            "Downloading ${selectedCoachDescriptor.displayName}... ${selectedCoachDownloadState.progressPercent ?: 0}%"
-                        } else {
-                            "${selectedCoachDescriptor.displayName} is not downloaded yet."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    selectedCoachDownloadState.errorMessage?.let { error ->
-                        Text(
-                            text = error,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                     Text(
@@ -617,19 +632,6 @@ fun ProfileEditScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedButton(
-                        onClick = { container.modelDownloadRepository.enqueueIfNeeded(selectedCoachDescriptor) },
-                        enabled = !selectedCoachReady && !selectedCoachDownloadState.isDownloading,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            if (selectedCoachDownloadState.isDownloading) {
-                                "Downloading coach model..."
-                            } else {
-                                "Download selected coach model"
-                            },
-                        )
-                    }
                     Text(
                         text = "Reset app",
                         style = MaterialTheme.typography.labelLarge,

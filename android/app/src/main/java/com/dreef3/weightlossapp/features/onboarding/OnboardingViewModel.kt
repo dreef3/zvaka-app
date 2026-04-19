@@ -2,6 +2,7 @@ package com.dreef3.weightlossapp.features.onboarding
 
 import com.dreef3.weightlossapp.app.network.NetworkConnectionMonitor
 import com.dreef3.weightlossapp.app.network.NetworkConnectionType
+import com.dreef3.weightlossapp.app.health.HealthConnectBackfillService
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -47,6 +49,7 @@ class OnboardingViewModel(
     private val modelDownloadController: ModelDownloadController,
     private val modelStorage: ModelStorage,
     private val networkConnectionMonitor: NetworkConnectionMonitor,
+    private val healthConnectBackfillService: HealthConnectBackfillService? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
@@ -192,7 +195,12 @@ class OnboardingViewModel(
     fun completeSetup() {
         viewModelScope.launch {
             _uiState.update { it.copy(isCompleted = true) }
-            preferences.setHealthConnectCaloriesEnabled(_uiState.value.form.healthConnectCaloriesEnabled)
+            val enabled = _uiState.value.form.healthConnectCaloriesEnabled
+            val wasEnabled = preferences.healthConnectCaloriesEnabled.first()
+            preferences.setHealthConnectCaloriesEnabled(enabled)
+            if (enabled && !wasEnabled) {
+                healthConnectBackfillService?.backfillRecentEntries()
+            }
             preferences.setCompletedOnboarding(true)
         }
     }

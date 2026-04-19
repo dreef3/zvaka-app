@@ -64,12 +64,13 @@ fun String.asBuildConfigString(): String =
 
 android {
     namespace = "com.dreef3.weightlossapp"
-    compileSdk = 35
+    compileSdk = 36
+    compileSdkExtension = 19
 
     defaultConfig {
         applicationId = "com.dreef3.weightlossapp"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = appVersionCode
         versionName = appVersionName
         buildConfigField("String", "MODEL_IMPROVEMENT_API_BASE_URL", modelImprovementApiBaseUrl.asBuildConfigString())
@@ -168,7 +169,7 @@ android {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.01.00")
     val roomVersion = "2.8.4"
-    val healthConnectVersion = "1.0.0-alpha11"
+    val healthConnectVersion = "1.1.0"
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.1")

@@ -143,6 +143,8 @@ private class TrendsFakeFoodEntryRepository(
     override fun observeEntry(entryId: Long): Flow<FoodEntry?> =
         MutableStateFlow(flow.value.firstOrNull { it.id == entryId })
 
+    override suspend fun getEntriesInRange(startDate: LocalDate, endDate: LocalDate): List<FoodEntry> = flow.value
+
     override suspend fun getEntry(entryId: Long): FoodEntry? = flow.value.firstOrNull { it.id == entryId }
 
     override suspend fun getPendingModelImprovementUploads(): List<FoodEntry> = emptyList()

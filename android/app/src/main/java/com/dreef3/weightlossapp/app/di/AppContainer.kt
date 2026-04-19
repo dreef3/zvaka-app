@@ -2,6 +2,7 @@ package com.dreef3.weightlossapp.app.di
 
 import android.content.Context
 import com.dreef3.weightlossapp.app.health.HealthConnectCaloriesExporter
+import com.dreef3.weightlossapp.app.health.HealthConnectBackfillService
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.chat.DietChatEngine
@@ -55,6 +56,11 @@ class AppContainer private constructor(context: Context) {
         driveSyncTrigger = driveSyncScheduler,
         preferences = preferences,
         healthConnectCaloriesExporter = healthConnectCaloriesExporter,
+    )
+    val healthConnectBackfillService = HealthConnectBackfillService(
+        foodEntryRepository = foodEntryRepository,
+        exporter = healthConnectCaloriesExporter,
+        localDateProvider = localDateProvider,
     )
     val modelImprovementUploader = ModelImprovementUploader(context, preferences, foodEntryRepository)
     val modelStorage = ModelStorage(context)

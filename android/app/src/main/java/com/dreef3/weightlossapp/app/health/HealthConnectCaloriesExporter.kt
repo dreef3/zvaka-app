@@ -15,18 +15,19 @@ import com.dreef3.weightlossapp.domain.model.ConfirmationStatus
 import com.dreef3.weightlossapp.domain.model.FoodEntry
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import java.time.Instant
+import java.time.Duration
 import java.time.ZoneId
 
 class HealthConnectCaloriesExporter(
     private val context: Context,
-) {
+) : HealthConnectCaloriesPublisher {
     private val nutritionWritePermission = HealthPermission.getWritePermission(NutritionRecord::class)
 
     fun sdkStatus(): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            HealthConnectClient.sdkStatus(context)
+            HealthConnectClient.getSdkStatus(context)
         } else {
-            HealthConnectClient.sdkStatus(context, HEALTH_CONNECT_PROVIDER_PACKAGE)
+            HealthConnectClient.getSdkStatus(context, HEALTH_CONNECT_PROVIDER_PACKAGE)
         }
 
     fun isAvailable(): Boolean =
@@ -57,27 +58,28 @@ class HealthConnectCaloriesExporter(
             .getOrThrow()
     }
 
-    suspend fun hasWritePermission(): Boolean {
+    override suspend fun hasWritePermission(): Boolean {
         if (!isAvailable()) return false
         val client = HealthConnectClient.getOrCreate(context)
         return client.permissionController.getGrantedPermissions().contains(nutritionWritePermission)
     }
 
-    suspend fun upsertCalories(entry: FoodEntry) {
+    override suspend fun upsertCalories(entry: FoodEntry) {
         if (!shouldPublish(entry) || !hasWritePermission()) return
         val client = HealthConnectClient.getOrCreate(context)
+        val endTime = nutritionEndTime(entry.capturedAt)
         client.insertRecords(
             listOf(
                 NutritionRecord(
                     startTime = entry.capturedAt,
                     startZoneOffset = zoneOffsetFor(entry.capturedAt),
-                    endTime = entry.capturedAt,
-                    endZoneOffset = zoneOffsetFor(entry.capturedAt),
+                    endTime = endTime,
+                    endZoneOffset = zoneOffsetFor(endTime),
                     energy = Energy.kilocalories(entry.finalCalories.toDouble()),
                     name = entry.detectedFoodLabel,
-                    metadata = Metadata(
-                        clientRecordId = clientRecordId(entry.id),
-                        clientRecordVersion = 0,
+                    metadata = Metadata.manualEntry(
+                        clientRecordId(entry.id),
+                        0,
                         device = Device(type = Device.TYPE_PHONE, manufacturer = null, model = null),
                     ),
                 ),
@@ -103,6 +105,8 @@ class HealthConnectCaloriesExporter(
             entry.finalCalories > 0
 
     private fun zoneOffsetFor(instant: Instant) = ZoneId.systemDefault().rules.getOffset(instant)
+
+    private fun nutritionEndTime(startTime: Instant): Instant = startTime.plus(Duration.ofMinutes(1))
 
     private fun clientRecordId(entryId: Long): String = "weightlossapp-food-entry-$entryId"
 

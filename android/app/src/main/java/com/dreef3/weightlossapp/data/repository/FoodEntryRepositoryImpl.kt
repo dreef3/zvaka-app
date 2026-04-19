@@ -32,6 +32,9 @@ class FoodEntryRepositoryImpl(
     override fun observeEntry(entryId: Long): Flow<FoodEntry?> =
         foodEntryDao.observeById(entryId).map { it?.toDomain() }
 
+    override suspend fun getEntriesInRange(startDate: LocalDate, endDate: LocalDate): List<FoodEntry> =
+        foodEntryDao.getInRange(startDate.toString(), endDate.toString()).map { it.toDomain() }
+
     override suspend fun getEntry(entryId: Long): FoodEntry? = foodEntryDao.getById(entryId)?.toDomain()
 
     override suspend fun getPendingModelImprovementUploads(): List<FoodEntry> =

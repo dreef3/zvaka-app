@@ -10,6 +10,7 @@ interface FoodEntryRepository {
     fun observeEntriesInRange(startDate: LocalDate, endDate: LocalDate): Flow<List<FoodEntry>>
     fun observeAllEntries(): Flow<List<FoodEntry>>
     fun observeEntry(entryId: Long): Flow<FoodEntry?>
+    suspend fun getEntriesInRange(startDate: LocalDate, endDate: LocalDate): List<FoodEntry>
     suspend fun getEntry(entryId: Long): FoodEntry?
     suspend fun getPendingModelImprovementUploads(): List<FoodEntry>
     suspend fun markModelImprovementUploaded(entryId: Long, uploadedAt: Instant)

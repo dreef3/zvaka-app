@@ -19,6 +19,9 @@ interface FoodEntryDao {
     @Query("SELECT * FROM food_entry WHERE entryDateIso BETWEEN :startIso AND :endIso")
     fun observeInRange(startIso: String, endIso: String): Flow<List<FoodEntryEntity>>
 
+    @Query("SELECT * FROM food_entry WHERE entryDateIso BETWEEN :startIso AND :endIso ORDER BY capturedAtEpochMs DESC")
+    suspend fun getInRange(startIso: String, endIso: String): List<FoodEntryEntity>
+
     @Query("SELECT * FROM food_entry ORDER BY capturedAtEpochMs DESC")
     fun observeAll(): Flow<List<FoodEntryEntity>>
 
