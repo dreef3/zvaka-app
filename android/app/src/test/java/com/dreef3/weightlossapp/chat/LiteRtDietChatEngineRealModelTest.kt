@@ -17,10 +17,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LiteRtDietChatEngineRealModelTest {
     @Test
     fun logsNewTextMealWithRealModel() = runBlocking {
