@@ -24,7 +24,7 @@ fast photo logging without premium upsells.
    envsubst '$FIREBASE_WEB_API_KEY' < app/google-services.json > app/google-services.json.tmp && mv app/google-services.json.tmp app/google-services.json
    ```
    In CI, the `Render google-services.json` workflow step does this automatically from the `FIREBASE_WEB_API_KEY` repository secret.
-7. If you are working outside Android Studio, set `ANDROID_SDK_ROOT` and use the checked-in Gradle Wrapper under `android/`
+6. If you are working outside Android Studio, set `ANDROID_SDK_ROOT` and use the checked-in Gradle Wrapper under `android/`
 
 ## Commands
 
