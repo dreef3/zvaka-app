@@ -17,8 +17,9 @@ fast photo logging without premium upsells.
 2. Install Android Studio or the Android SDK for API 35
 3. Open the `android/` project
 4. Put the LiteRT-LM compatible model file at the app-private runtime path `files/models/gemma-3n-e2b-it.litertlm`
-5. Add your Firebase config file at `android/app/google-services.json` (Crashlytics requires this)
-6. If you are working outside Android Studio, set `ANDROID_SDK_ROOT` and use the checked-in Gradle Wrapper under `android/`
+5. Set `FIREBASE_WEB_API_KEY` in `android/.env.firebase` (you can copy `android/.env.firebase.example`) before local builds that need Firebase
+6. Use the checked-in `android/app/google-services.json` template (it now expects `${FIREBASE_WEB_API_KEY}` substitution in CI)
+7. If you are working outside Android Studio, set `ANDROID_SDK_ROOT` and use the checked-in Gradle Wrapper under `android/`
 
 ## Commands
 

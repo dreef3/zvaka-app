@@ -52,6 +52,47 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Create .env.firebase
+        env:
+          FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$FIREBASE_WEB_API_KEY"
+          printf 'FIREBASE_WEB_API_KEY=%s\n' "$FIREBASE_WEB_API_KEY" > .env.firebase
+
+      - name: Render google-services.json from .env.firebase
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          env = {}
+          for raw_line in Path(".env.firebase").read_text(encoding="utf-8").splitlines():
+              line = raw_line.strip()
+              if not line or line.startswith("#"):
+                  continue
+              if "=" not in line:
+                  raise SystemExit(f"Invalid .env.firebase entry: {raw_line}")
+              key, value = line.split("=", 1)
+              env[key] = value
+
+          config_path = Path("app/google-services.json")
+          template = config_path.read_text(encoding="utf-8")
+
+          def replace(match: re.Match[str]) -> str:
+              key = match.group(1)
+              value = env.get(key)
+              if not value:
+                  raise SystemExit(f"Missing required variable in .env.firebase: {key}")
+              return value
+
+          rendered = re.sub(r"\$\{([A-Z0-9_]+)\}", replace, template)
+          if re.search(r"\$\{[A-Z0-9_]+\}", rendered):
+              raise SystemExit("Unresolved placeholders remain in app/google-services.json")
+          config_path.write_text(rendered, encoding="utf-8")
+          PY
+
       - name: Decode debug keystore
         env:
           DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}

@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCMDA8F_-W-Z0eaeHAIp66pkN4OybQSCjw"
+          "current_key": "${FIREBASE_WEB_API_KEY}"
         }
       ],
       "services": {
@@ -34,7 +34,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCMDA8F_-W-Z0eaeHAIp66pkN4OybQSCjw"
+          "current_key": "${FIREBASE_WEB_API_KEY}"
         }
       ],
       "services": {
