@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.fail
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,7 +38,7 @@ class LiteRtDietChatEngineRealModelTest {
             snapshot = emptySnapshot(),
         )
 
-        assertTrue(response.isSuccess)
+        if (response.isFailure) fail("Real-model chat failed: ${response.exceptionOrNull()?.stackTraceToString()}")
         val body = response.getOrThrow()
         assertTrue(body.isNotBlank())
         assertFalse(body.contains("Exception", ignoreCase = true))
@@ -67,7 +68,7 @@ class LiteRtDietChatEngineRealModelTest {
             snapshot = snapshotFor(listOf(entry)),
         )
 
-        assertTrue(response.isSuccess)
+        if (response.isFailure) fail("Real-model chat failed: ${response.exceptionOrNull()?.stackTraceToString()}")
         val body = response.getOrThrow()
         assertTrue(body.isNotBlank())
         assertFalse(body.contains("Exception", ignoreCase = true))
@@ -99,7 +100,7 @@ class LiteRtDietChatEngineRealModelTest {
             snapshot = snapshotFor(listOf(entry)),
         )
 
-        assertTrue(response.isSuccess)
+        if (response.isFailure) fail("Real-model chat failed: ${response.exceptionOrNull()?.stackTraceToString()}")
         val body = response.getOrThrow()
         assertTrue(body.isNotBlank())
         assertFalse(body.contains("Exception", ignoreCase = true))
@@ -115,7 +116,7 @@ class LiteRtDietChatEngineRealModelTest {
             snapshot = emptySnapshot(),
         )
 
-        assertTrue(response.isSuccess)
+        if (response.isFailure) fail("Real-model chat failed: ${response.exceptionOrNull()?.stackTraceToString()}")
         val body = response.getOrThrow()
         assertTrue(body.isNotBlank())
         assertFalse(body.contains("Exception", ignoreCase = true))
