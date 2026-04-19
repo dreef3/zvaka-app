@@ -38,6 +38,7 @@ import com.dreef3.weightlossapp.app.media.ModelDownloadState
 fun LocalModelPreparationScreen(
     state: ModelDownloadState,
     modifier: Modifier = Modifier,
+    compactLayout: Boolean = false,
     showRetry: Boolean = false,
     onRetry: (() -> Unit)? = null,
 ) {
@@ -49,11 +50,11 @@ fun LocalModelPreparationScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(if (compactLayout) 20.dp else 24.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compactLayout) 12.dp else 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            PreparationFeast()
+            PreparationFeast(compactLayout = compactLayout)
             Text(
                 text = "Preparing the local AI.",
                 style = MaterialTheme.typography.titleMedium,
@@ -114,7 +115,7 @@ fun LocalModelPreparationScreen(
 }
 
 @Composable
-private fun PreparationFeast() {
+private fun PreparationFeast(compactLayout: Boolean) {
     val primary = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
@@ -140,7 +141,7 @@ private fun PreparationFeast() {
     )
 
     Box(
-        modifier = Modifier.size(180.dp),
+        modifier = Modifier.size(if (compactLayout) 152.dp else 180.dp),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
@@ -149,7 +150,7 @@ private fun PreparationFeast() {
         }
         Canvas(
             modifier = Modifier
-                .size(140.dp)
+                .size(if (compactLayout) 118.dp else 140.dp)
                 .padding(top = 6.dp),
         ) {
             val center = Offset(size.width / 2f, size.height / 2f + bob)

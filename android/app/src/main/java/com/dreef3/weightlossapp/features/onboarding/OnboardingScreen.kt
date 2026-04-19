@@ -11,20 +11,27 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -41,6 +48,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -268,47 +276,82 @@ fun OnboardingScreen(
     healthConnectAvailable: Boolean,
     healthConnectNeedsProviderSetup: Boolean,
 ) {
-    Column(
+    val compactLayout = LocalConfiguration.current.screenHeightDp < 780
+    val outerPadding = if (compactLayout) 16.dp else 24.dp
+    val sectionSpacing = if (compactLayout) 12.dp else 16.dp
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .imePadding()
+            .padding(WindowInsets.safeDrawing.asPaddingValues()),
     ) {
-        SetupHeader(step = state.step)
-        when (state.step) {
-            OnboardingStep.DownloadIntro -> DownloadIntroStep(
-                onContinue = onContinueFromIntro,
-                onRestoreFromDrive = onRestoreFromDrive,
-                isRestoringBackup = isRestoringBackup,
-                onboardingDriveMessage = onboardingDriveMessage,
-            )
-            OnboardingStep.Profile -> ProfileStep(
-                state = state,
-                onFirstNameChanged = onFirstNameChanged,
-                onAgeChanged = onAgeChanged,
-                onHeightChanged = onHeightChanged,
-                onWeightChanged = onWeightChanged,
-                onSexChanged = onSexChanged,
-                onActivityLevelChanged = onActivityLevelChanged,
-                onHealthConnectCaloriesChanged = onHealthConnectCaloriesChanged,
-                onBack = onBackFromProfile,
-                onContinue = onSubmitProfile,
-                onboardingHealthConnectMessage = onboardingHealthConnectMessage,
-                healthConnectAvailable = healthConnectAvailable,
-                healthConnectNeedsProviderSetup = healthConnectNeedsProviderSetup,
-            )
-            OnboardingStep.BudgetPreview -> BudgetPreviewStep(
-                firstName = state.form.firstName,
-                estimatedBudgetCalories = state.estimatedBudgetCalories ?: 0,
-                downloadAlreadyInProgress = state.modelDownloadState.isDownloading,
-                onContinue = onStartModelDownload,
-                notificationMessage = onboardingNotificationMessage,
-            )
-            OnboardingStep.Downloading -> DownloadingStep(state)
-            OnboardingStep.Ready -> ReadyStep(
-                firstName = state.form.firstName,
-                onFinish = onFinish,
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = outerPadding, vertical = outerPadding),
+            verticalArrangement = Arrangement.spacedBy(sectionSpacing),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 560.dp),
+                    verticalArrangement = Arrangement.spacedBy(sectionSpacing),
+                ) {
+                    SetupHeader(
+                        step = state.step,
+                        compactLayout = compactLayout,
+                    )
+                    when (state.step) {
+                        OnboardingStep.DownloadIntro -> DownloadIntroStep(
+                            onContinue = onContinueFromIntro,
+                            onRestoreFromDrive = onRestoreFromDrive,
+                            isRestoringBackup = isRestoringBackup,
+                            onboardingDriveMessage = onboardingDriveMessage,
+                            compactLayout = compactLayout,
+                        )
+                        OnboardingStep.Profile -> ProfileStep(
+                            state = state,
+                            onFirstNameChanged = onFirstNameChanged,
+                            onAgeChanged = onAgeChanged,
+                            onHeightChanged = onHeightChanged,
+                            onWeightChanged = onWeightChanged,
+                            onSexChanged = onSexChanged,
+                            onActivityLevelChanged = onActivityLevelChanged,
+                            onHealthConnectCaloriesChanged = onHealthConnectCaloriesChanged,
+                            onBack = onBackFromProfile,
+                            onContinue = onSubmitProfile,
+                            onboardingHealthConnectMessage = onboardingHealthConnectMessage,
+                            healthConnectAvailable = healthConnectAvailable,
+                            healthConnectNeedsProviderSetup = healthConnectNeedsProviderSetup,
+                            compactLayout = compactLayout,
+                        )
+                        OnboardingStep.BudgetPreview -> BudgetPreviewStep(
+                            firstName = state.form.firstName,
+                            estimatedBudgetCalories = state.estimatedBudgetCalories ?: 0,
+                            downloadAlreadyInProgress = state.modelDownloadState.isDownloading,
+                            onContinue = onStartModelDownload,
+                            notificationMessage = onboardingNotificationMessage,
+                            compactLayout = compactLayout,
+                        )
+                        OnboardingStep.Downloading -> DownloadingStep(
+                            state = state,
+                            compactLayout = compactLayout,
+                        )
+                        OnboardingStep.Ready -> ReadyStep(
+                            firstName = state.form.firstName,
+                            onFinish = onFinish,
+                            compactLayout = compactLayout,
+                        )
+                    }
+                }
+            }
         }
         if (state.showCellularDownloadConfirmation) {
             CellularDownloadConfirmationDialog(
@@ -320,7 +363,10 @@ fun OnboardingScreen(
 }
 
 @Composable
-private fun SetupHeader(step: OnboardingStep) {
+private fun SetupHeader(
+    step: OnboardingStep,
+    compactLayout: Boolean,
+) {
     Text(
         text = when (step) {
             OnboardingStep.DownloadIntro -> "Let’s set up Žvaka"
@@ -329,7 +375,7 @@ private fun SetupHeader(step: OnboardingStep) {
             OnboardingStep.Downloading -> "Preparing the local AI model"
             OnboardingStep.Ready -> "Žvaka is ready"
         },
-        style = MaterialTheme.typography.headlineMedium,
+        style = if (compactLayout) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
         color = MaterialTheme.colorScheme.onBackground,
     )
 }
@@ -340,9 +386,10 @@ private fun DownloadIntroStep(
     onRestoreFromDrive: () -> Unit,
     isRestoringBackup: Boolean,
     onboardingDriveMessage: String?,
+    compactLayout: Boolean,
 ) {
-    StepCard {
-        HeroPlate()
+    StepCard(compactLayout = compactLayout) {
+        HeroPlate(compactLayout = compactLayout)
         Text(
             text = "Žvaka runs food analysis fully on your phone. To do that, it needs to download a large local AI model once.",
             style = MaterialTheme.typography.bodyLarge,
@@ -398,8 +445,9 @@ private fun ProfileStep(
     onboardingHealthConnectMessage: String?,
     healthConnectAvailable: Boolean,
     healthConnectNeedsProviderSetup: Boolean,
+    compactLayout: Boolean,
 ) {
-    StepCard {
+    StepCard(compactLayout = compactLayout) {
         Text(
             text = "Only the details needed for the Mifflin-St Jeor calorie estimate.",
             style = MaterialTheme.typography.bodyMedium,
@@ -459,14 +507,18 @@ private fun BudgetPreviewStep(
     downloadAlreadyInProgress: Boolean,
     onContinue: () -> Unit,
     notificationMessage: String?,
+    compactLayout: Boolean,
 ) {
-    StepCard {
+    StepCard(compactLayout = compactLayout) {
         Text(
             text = "Based on your current details, Žvaka estimates this as your daily calorie budget.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        BudgetRing(calories = estimatedBudgetCalories)
+        BudgetRing(
+            calories = estimatedBudgetCalories,
+            compactLayout = compactLayout,
+        )
         Text(
             text = "${firstName.ifBlank { "Your" }} daily target is about $estimatedBudgetCalories kcal.",
             style = MaterialTheme.typography.titleLarge,
@@ -498,17 +550,22 @@ private fun BudgetPreviewStep(
 @Composable
 private fun DownloadingStep(
     state: OnboardingUiState,
+    compactLayout: Boolean,
 ) {
-    LocalModelPreparationScreen(state = state.modelDownloadState)
+    LocalModelPreparationScreen(
+        state = state.modelDownloadState,
+        compactLayout = compactLayout,
+    )
 }
 
 @Composable
 private fun ReadyStep(
     firstName: String,
     onFinish: () -> Unit,
+    compactLayout: Boolean,
 ) {
-    StepCard {
-        HeroPlate()
+    StepCard(compactLayout = compactLayout) {
+        HeroPlate(compactLayout = compactLayout)
         Text(
             text = "${firstName.ifBlank { "Everything" }} is ready. The local model is installed and Žvaka can start tracking meals.",
             style = MaterialTheme.typography.titleMedium,
@@ -558,6 +615,7 @@ private fun CellularDownloadConfirmationDialog(
 
 @Composable
 private fun StepCard(
+    compactLayout: Boolean,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
@@ -568,8 +626,8 @@ private fun StepCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(if (compactLayout) 20.dp else 24.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compactLayout) 12.dp else 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             content = content,
         )
@@ -577,7 +635,7 @@ private fun StepCard(
 }
 
 @Composable
-private fun HeroPlate() {
+private fun HeroPlate(compactLayout: Boolean) {
     val primary = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
@@ -603,7 +661,7 @@ private fun HeroPlate() {
     )
 
     Box(
-        modifier = Modifier.size(136.dp),
+        modifier = Modifier.size(if (compactLayout) 112.dp else 136.dp),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -661,11 +719,14 @@ private fun HeroPlate() {
 }
 
 @Composable
-private fun BudgetRing(calories: Int) {
+private fun BudgetRing(
+    calories: Int,
+    compactLayout: Boolean,
+) {
     val primary = MaterialTheme.colorScheme.primary
     val primaryContainer = MaterialTheme.colorScheme.primaryContainer
     Box(
-        modifier = Modifier.size(172.dp),
+        modifier = Modifier.size(if (compactLayout) 144.dp else 172.dp),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -688,7 +749,7 @@ private fun BudgetRing(calories: Int) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = calories.toString(),
-                style = MaterialTheme.typography.displaySmall,
+                style = if (compactLayout) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displaySmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
