@@ -56,6 +56,8 @@ val modelImprovementCloudProjectNumberLiteral = modelImprovementCloudProjectNumb
     ?.let { "${it}L" }
     ?: "0L"
 
+val modelImprovementCloudProjectNumberValue = modelImprovementCloudProjectNumber.toLongOrNull() ?: 0L
+
 val modelImprovementDebugToken = providers.gradleProperty("modelImprovementDebugToken")
     .orElse(providers.environmentVariable("MODEL_IMPROVEMENT_DEBUG_TOKEN"))
     .orElse(localEnvProperties.getProperty("MODEL_IMPROVEMENT_DEBUG_TOKEN") ?: "")
@@ -171,6 +173,17 @@ android {
     }
 }
 
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst {
+        check(modelImprovementApiBaseUrl.isNotBlank()) {
+            "Release build requires MODEL_IMPROVEMENT_API_BASE_URL to be set."
+        }
+        check(modelImprovementCloudProjectNumberValue > 0L) {
+            "Release build requires MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER to be a positive integer."
+        }
+    }
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.01.00")
     val firebaseBom = platform("com.google.firebase:firebase-bom:34.12.0")
@@ -195,6 +208,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
     implementation("com.google.android.gms:play-services-auth:21.4.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("com.google.android.play:integrity:1.6.0")
     implementation(firebaseBom)
     implementation("com.google.firebase:firebase-crashlytics")

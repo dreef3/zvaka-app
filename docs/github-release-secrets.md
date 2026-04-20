@@ -10,6 +10,10 @@ To run the release workflow end-to-end from GitHub Actions, add these repository
   Upload key alias
 - `ANDROID_KEY_PASSWORD`
   Upload key password
+- `MODEL_IMPROVEMENT_API_BASE_URL`
+  HTTPS endpoint used by release builds for model-improvement uploads
+- `MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER`
+  Google Cloud project number used by release builds for Play Integrity token requests
 
 Optional secret for automatic Play upload:
 

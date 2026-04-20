@@ -16,6 +16,8 @@
   - `ANDROID_KEYSTORE_PASSWORD`
   - `ANDROID_KEY_ALIAS`
   - `ANDROID_KEY_PASSWORD`
+  - `MODEL_IMPROVEMENT_API_BASE_URL`
+  - `MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER`
 - GitHub Actions Play upload uses Workload Identity Federation, not a service-account JSON secret.
 - The workflow produces:
   - signed `app-release.aab`
@@ -51,6 +53,7 @@
 - Reinstall on a second device with the same Google account and verify restore from onboarding.
 - Verify meal capture, coach chat, model download, and background sync on Wi-Fi and cellular.
 - Verify no debug-only screens or sample content are exposed in the release UX.
+- Verify Settings -> Data and sync enables model improvement sharing in the release build and can request Play Integrity-backed uploads.
 
 ## Notes
 
