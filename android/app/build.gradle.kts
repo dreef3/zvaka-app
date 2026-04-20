@@ -220,7 +220,6 @@ dependencies {
     implementation(firebaseBom)
     implementation("com.google.firebase:firebase-crashlytics")
     implementation("com.google.firebase:firebase-crashlytics-ndk")
-    implementation("com.google.firebase:firebase-analytics")
 
     implementation(composeBom)
     androidTestImplementation(composeBom)
