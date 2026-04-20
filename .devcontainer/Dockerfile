@@ -1,0 +1,35 @@
+FROM eclipse-temurin:17-jdk-jammy
+
+SHELL ["/bin/bash", "-c"]
+
+# Android SDK command-line tools
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools:${PATH}"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates git unzip python3 python3-yaml jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Android SDK command-line tools
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+      -o /tmp/cmdtools.zip && \
+    unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools && \
+    mv /tmp/cmdtools/cmdline-tools ${ANDROID_SDK_ROOT}/cmdline-tools/latest && \
+    rm -rf /tmp/cmdtools.zip /tmp/cmdtools
+
+# Accept Android SDK licenses and install platform + build tools
+RUN yes | sdkmanager --licenses && \
+    sdkmanager "platforms;android-35" "build-tools;35.0.1" "platform-tools"
+
+# Node (for Claude Code npm install)
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+    apt-get install -y nodejs && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
+# OpenCode
+RUN curl -fsSL https://opencode.ai/install | OPENCODE_INSTALL=/usr/local sh
+
+WORKDIR /workspace
