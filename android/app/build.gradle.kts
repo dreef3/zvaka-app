@@ -7,6 +7,7 @@ plugins {
     id("com.google.firebase.crashlytics")
 }
 
+import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
 import java.util.Properties
 
 val signingProperties = Properties().apply {
@@ -130,6 +131,9 @@ android {
             isDebuggable = false
             buildConfigField("boolean", "ENABLE_VERBOSE_LOGGING", "false")
             manifestPlaceholders["appUsesCleartextTraffic"] = "false"
+            configure<CrashlyticsExtension> {
+                nativeSymbolUploadEnabled = true
+            }
             if (signingConfigs.findByName("release") != null) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -163,6 +167,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            keepDebugSymbols += "**/*.so"
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -212,6 +219,8 @@ dependencies {
     implementation("com.google.android.play:integrity:1.6.0")
     implementation(firebaseBom)
     implementation("com.google.firebase:firebase-crashlytics")
+    implementation("com.google.firebase:firebase-crashlytics-ndk")
+    implementation("com.google.firebase:firebase-analytics")
 
     implementation(composeBom)
     androidTestImplementation(composeBom)

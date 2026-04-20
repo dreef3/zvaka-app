@@ -2,6 +2,7 @@ package com.dreef3.weightlossapp.app
 
 import android.os.Bundle
 import android.util.Log
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +19,7 @@ import com.google.android.play.core.install.model.UpdateAvailability
 class MainActivity : ComponentActivity() {
     private lateinit var appUpdateManager: AppUpdateManager
     private var hasCheckedForImmediateUpdate = false
+    private var shouldCheckForImmediateUpdate = false
     private val immediateUpdateOptions = AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
     private val immediateUpdateLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -29,6 +31,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        shouldCheckForImmediateUpdate = savedInstanceState == null && isLauncherStart(intent)
         AppContainer.initialize(applicationContext)
         AppInitializer.initialize(AppContainer.instance)
         appUpdateManager = AppUpdateManagerFactory.create(applicationContext)
@@ -41,7 +44,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (!BuildConfig.DEBUG && !hasCheckedForImmediateUpdate) {
+        if (!BuildConfig.DEBUG && shouldCheckForImmediateUpdate && !hasCheckedForImmediateUpdate) {
             hasCheckedForImmediateUpdate = true
             checkForImmediateUpdate()
         }
@@ -81,14 +84,24 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchImmediateUpdate(appUpdateInfo: AppUpdateInfo) {
-        val started = appUpdateManager.startUpdateFlowForResult(
-            appUpdateInfo,
-            immediateUpdateLauncher,
-            immediateUpdateOptions,
-        )
-        if (!started) {
-            Log.w(TAG, "Immediate update flow was not started")
+        runCatching {
+            appUpdateManager.startUpdateFlowForResult(
+                appUpdateInfo,
+                immediateUpdateLauncher,
+                immediateUpdateOptions,
+            )
+        }.onSuccess { started ->
+            if (!started) {
+                Log.w(TAG, "Immediate update flow was not started")
+            }
+        }.onFailure { throwable ->
+            Log.w(TAG, "Immediate update flow launch failed", throwable)
         }
+    }
+
+    private fun isLauncherStart(intent: Intent?): Boolean {
+        if (intent == null) return false
+        return intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)
     }
 
     private companion object {
