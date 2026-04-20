@@ -41,6 +41,12 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.1"
 
@@ -97,13 +103,10 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            ./gradlew installDebug installDebugAndroidTest --no-daemon
+            ./android/gradlew -p android installDebug installDebugAndroidTest --no-daemon
             adb shell run-as com.dreef3.weightlossapp.debug mkdir -p cache/models
-            adb shell "run-as com.dreef3.weightlossapp.debug sh -c 'cat > cache/models/gemma-4-E2B-it.litertlm'" < app/build/test-models/gemma-4-E2B-it.litertlm
-            ./gradlew connectedDebugAndroidTest --no-daemon \
-              -Pandroid.testInstrumentationRunnerArguments.class=com.dreef3.weightlossapp.chat.LiteRtDietChatEngineInstrumentedSmokeTest \
-              -Pandroid.testInstrumentationRunnerArguments.runRealGemmaTests=true \
-              -Pandroid.testInstrumentationRunnerArguments.gemmaModelPath=/data/user/0/com.dreef3.weightlossapp.debug/cache/models/gemma-4-E2B-it.litertlm
+            adb shell "run-as com.dreef3.weightlossapp.debug sh -c 'cat > cache/models/gemma-4-E2B-it.litertlm'" < android/app/build/test-models/gemma-4-E2B-it.litertlm
+            ./android/gradlew -p android connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.dreef3.weightlossapp.chat.LiteRtDietChatEngineInstrumentedSmokeTest -Pandroid.testInstrumentationRunnerArguments.runRealGemmaTests=true -Pandroid.testInstrumentationRunnerArguments.gemmaModelPath=/data/user/0/com.dreef3.weightlossapp.debug/cache/models/gemma-4-E2B-it.litertlm
 
       - name: Upload test reports
         if: always()
