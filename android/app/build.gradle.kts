@@ -131,6 +131,9 @@ android {
             isDebuggable = false
             buildConfigField("boolean", "ENABLE_VERBOSE_LOGGING", "false")
             manifestPlaceholders["appUsesCleartextTraffic"] = "false"
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
             configure<CrashlyticsExtension> {
                 nativeSymbolUploadEnabled = true
             }
