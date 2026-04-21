@@ -82,7 +82,7 @@ fun OnboardingScreenRoute(
     var onboardingDriveMessage by remember { mutableStateOf<String?>(null) }
     var onboardingNotificationMessage by remember { mutableStateOf<String?>(null) }
     var onboardingHealthConnectMessage by remember { mutableStateOf<String?>(null) }
-    var hasAutoResolvedHealthConnectOptIn by remember { mutableStateOf(false) }
+    var continueAfterHealthConnectPermission by remember { mutableStateOf(false) }
     var completeAfterModelPreparation by remember { mutableStateOf(false) }
     val healthConnectAvailable = container.healthConnectCaloriesExporter.isAvailable()
     val healthConnectNeedsProviderSetup = container.healthConnectCaloriesExporter.needsProviderSetup()
@@ -184,44 +184,58 @@ fun OnboardingScreenRoute(
             onboardingHealthConnectMessage = "Health Connect permission was not granted, so calorie sync will stay off."
             vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
         }
+        if (continueAfterHealthConnectPermission) {
+            continueAfterHealthConnectPermission = false
+            if (needsNotificationPermission(context)) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                vm.requestModelDownload()
+            }
+        }
+    }
+
+    fun onHealthConnectOptInChanged(enabled: Boolean) {
+        onboardingHealthConnectMessage = null
+        vm.updateForm { it.copy(healthConnectCaloriesEnabled = enabled) }
+    }
+
+    fun continueFromBudgetPreview() {
+        scope.launch {
+            if (state.form.healthConnectCaloriesEnabled) {
+                when {
+                    healthConnectAvailable && !container.healthConnectCaloriesExporter.hasWritePermission() -> {
+                        continueAfterHealthConnectPermission = true
+                        healthConnectPermissionLauncher.launch(container.healthConnectCaloriesExporter.requiredPermissions())
+                        return@launch
+                    }
+                    healthConnectAvailable -> {
+                        onboardingHealthConnectMessage = "Health Connect permission is already granted."
+                    }
+                    healthConnectNeedsProviderSetup -> {
+                        onboardingHealthConnectMessage = "Health Connect needs setup or an update before this app can request access."
+                        vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
+                    }
+                    else -> {
+                        onboardingHealthConnectMessage = "Health Connect is not available on this device."
+                        vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
+                    }
+                }
+            }
+
+            if (needsNotificationPermission(context)) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                vm.requestModelDownload()
+            }
+        }
     }
 
     fun handleHealthConnectOptInChange(enabled: Boolean) {
         if (!enabled) {
             onboardingHealthConnectMessage = null
-            hasAutoResolvedHealthConnectOptIn = true
-            vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
-        } else if (healthConnectAvailable) {
-            scope.launch {
-                hasAutoResolvedHealthConnectOptIn = true
-                if (container.healthConnectCaloriesExporter.hasWritePermission()) {
-                    onboardingHealthConnectMessage = "Health Connect permission is already granted."
-                    vm.updateForm { it.copy(healthConnectCaloriesEnabled = true) }
-                } else {
-                    onboardingHealthConnectMessage = null
-                    vm.updateForm { it.copy(healthConnectCaloriesEnabled = true) }
-                    healthConnectPermissionLauncher.launch(container.healthConnectCaloriesExporter.requiredPermissions())
-                }
-            }
-        } else if (healthConnectNeedsProviderSetup) {
-            hasAutoResolvedHealthConnectOptIn = true
-            onboardingHealthConnectMessage = "Health Connect needs setup or an update before this app can request access."
             vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
         } else {
-            hasAutoResolvedHealthConnectOptIn = true
-            onboardingHealthConnectMessage = "Health Connect is not available on this device."
-            vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
-        }
-    }
-
-    fun continueFromBudgetPreview() {
-        if (state.form.healthConnectCaloriesEnabled && !hasAutoResolvedHealthConnectOptIn) {
-            handleHealthConnectOptInChange(true)
-        }
-        if (needsNotificationPermission(context)) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            vm.requestModelDownload()
+            onHealthConnectOptInChanged(true)
         }
     }
 
