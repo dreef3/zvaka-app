@@ -31,4 +31,6 @@ Kotlin 2.x: Follow standard conventions
 - Use Conventional Commits / semantic commit messages for all commits in this repo. Prefer formats like `feat: ...`, `fix: ...`, `refactor: ...`, `docs: ...`, `ci: ...`, and use `!` or `BREAKING CHANGE:` for breaking changes.
 - Local device connection details and Android SDK paths live in `.env.local` at the repo root.
 - After making Android app changes, always install the app on a connected device if one is available. Use the SDK and device connection details from `.env.local` when needed.
+- Do not run local unit tests or instrumentation tests on this machine. Raise a PR and rely on GitHub Actions for test execution instead.
+- Local Android validation on this machine should be limited to install flows such as `cd android && ./gradlew installDebug`.
 <!-- MANUAL ADDITIONS END -->
