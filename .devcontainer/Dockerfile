@@ -29,4 +29,11 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
 # Claude Code + OpenCode CLIs
 RUN npm install -g @anthropic-ai/claude-code opencode-ai
 
+# Non-root user (Claude Code requires non-root for --dangerously-skip-permissions)
+RUN useradd -m -s /bin/bash -u 1000 dev \
+    && mkdir -p /workspace \
+    && chown dev:dev /workspace \
+    && chown -R dev:dev /opt/android-sdk
+
+USER dev
 WORKDIR /workspace
