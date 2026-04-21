@@ -638,6 +638,7 @@ fun ProfileEditScreen(
                         text = when (gemmaBackend) {
                             GemmaBackend.CPU -> "CPU is slower, but it is the safer path on this device."
                             GemmaBackend.GPU -> "GPU is faster when it works, but it can freeze or crash on unstable devices."
+                            GemmaBackend.NPU -> "NPU is the fastest path on supported devices. If startup fails for photo estimation, it falls back to GPU and then CPU."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

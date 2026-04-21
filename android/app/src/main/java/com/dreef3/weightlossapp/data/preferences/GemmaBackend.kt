@@ -6,6 +6,7 @@ enum class GemmaBackend(
 ) {
     CPU("cpu", "CPU"),
     GPU("gpu", "GPU"),
+    NPU("npu", "NPU"),
     ;
 
     companion object {

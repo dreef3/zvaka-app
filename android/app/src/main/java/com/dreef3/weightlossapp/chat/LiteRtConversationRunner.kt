@@ -53,8 +53,8 @@ class LiteRtConversationRunner(
 
     private suspend fun getOrCreateEngine(): Engine = engineMutex.withLock {
         val desiredPreference = backendPreferenceProvider().toEnginePreference()
-        engine?.takeIf { enginePreference?.mode == desiredPreference.mode }?.let { return it }
-        if (engine != null && enginePreference?.mode != desiredPreference.mode) {
+        engine?.takeIf { enginePreference == desiredPreference }?.let { return it }
+        if (engine != null && enginePreference != desiredPreference) {
             runCatching { engine?.close() }
                 .onFailure { Log.w(TAG, "Failed closing LiteRT coach engine during backend switch", it) }
             engine = null
@@ -134,6 +134,7 @@ class LiteRtConversationRunner(
     private fun GemmaBackend.toEnginePreference(): GemmaBackendPreference = when (this) {
         GemmaBackend.CPU -> GemmaBackendPreference(mode = this, backend = Backend.CPU())
         GemmaBackend.GPU -> GemmaBackendPreference(mode = this, backend = Backend.GPU())
+        GemmaBackend.NPU -> GemmaBackendPreference(mode = this, backend = Backend.NPU())
     }
 
     private companion object {
