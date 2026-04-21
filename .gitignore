@@ -34,3 +34,4 @@ android/signing.properties
 *.hprof
 
 .agents/
+tmp/
