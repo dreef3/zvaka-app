@@ -1,5 +1,6 @@
 package com.dreef3.weightlossapp.data.repository
 
+import android.util.Log
 import com.dreef3.weightlossapp.app.health.HealthConnectCaloriesExporter
 import com.dreef3.weightlossapp.app.sync.DriveSyncTrigger
 import com.dreef3.weightlossapp.app.sync.NoOpDriveSyncTrigger
@@ -42,7 +43,7 @@ class FoodEntryRepositoryImpl(
 
     override suspend fun markModelImprovementUploaded(entryId: Long, uploadedAt: Instant) {
         foodEntryDao.markModelImprovementUploaded(entryId, uploadedAt.toEpochMilli())
-        driveSyncTrigger.requestSync("food_entry:model_improvement_uploaded")
+        requestDriveSync("food_entry:model_improvement_uploaded")
     }
 
     override suspend fun upsert(entry: FoodEntry): Long {
@@ -52,19 +53,32 @@ class FoodEntryRepositoryImpl(
             val updatedRows = foodEntryDao.update(entry.toEntity())
             if (updatedRows > 0) entry.id else foodEntryDao.insert(entry.toEntity())
         }
-        publishHealthConnectCopy(entry.copy(id = entryId))
-        driveSyncTrigger.requestSync("food_entry:upsert")
+        runCatching { publishHealthConnectCopy(entry.copy(id = entryId)) }
+            .onFailure { throwable ->
+                Log.w(TAG, "Failed publishing Health Connect calories for entryId=$entryId", throwable)
+            }
+        requestDriveSync("food_entry:upsert")
         return entryId
     }
 
     override suspend fun delete(entry: FoodEntry) {
-        deleteHealthConnectCopy(entry.id)
+        runCatching { deleteHealthConnectCopy(entry.id) }
+            .onFailure { throwable ->
+                Log.w(TAG, "Failed deleting Health Connect calories for entryId=${entry.id}", throwable)
+            }
         foodEntryDao.update(
             entry.copy(
                 deletedAt = java.time.Instant.now(),
             ).toEntity(),
         )
-        driveSyncTrigger.requestSync("food_entry:delete")
+        requestDriveSync("food_entry:delete")
+    }
+
+    private fun requestDriveSync(reason: String) {
+        runCatching { driveSyncTrigger.requestSync(reason) }
+            .onFailure { throwable ->
+                Log.w(TAG, "Failed requesting Drive sync for reason=$reason", throwable)
+            }
     }
 
     private suspend fun publishHealthConnectCopy(entry: FoodEntry) {
@@ -80,5 +94,9 @@ class FoodEntryRepositoryImpl(
     private suspend fun deleteHealthConnectCopy(entryId: Long) {
         if (entryId == 0L) return
         healthConnectCaloriesExporter?.deleteCalories(entryId)
+    }
+
+    private companion object {
+        const val TAG = "FoodEntryRepository"
     }
 }
