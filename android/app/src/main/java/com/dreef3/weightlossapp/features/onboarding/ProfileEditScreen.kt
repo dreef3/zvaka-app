@@ -52,6 +52,7 @@ import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import com.dreef3.weightlossapp.inference.primaryModelDescriptor
 import com.dreef3.weightlossapp.inference.requiredModelDescriptors
 import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileRequest
+import com.dreef3.weightlossapp.domain.calculation.CalorieBudgetCalculator
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -107,7 +108,8 @@ fun ProfileEditScreen(
 
     var form by remember { mutableStateOf(OnboardingFormState()) }
     var hasLoaded by remember { mutableStateOf(false) }
-    var errors by remember { mutableStateOf(emptyList<String>()) }
+    var fieldErrors by remember { mutableStateOf(OnboardingValidator.FieldErrors()) }
+    var hasAttemptedSave by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var isResetting by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
@@ -119,6 +121,7 @@ fun ProfileEditScreen(
     var showAdvancedSettings by remember { mutableStateOf(false) }
     var healthConnectStatusMessage by remember { mutableStateOf<String?>(null) }
     val currentBudget = budgetPeriods.maxByOrNull { it.effectiveFromDate }?.caloriesPerDay
+    val estimatedBudget = form.estimatedBudgetOrNull(container.budgetCalculator)
     val requiredResetName = profile?.firstName?.trim().orEmpty()
 
     val healthConnectPermissionLauncher = rememberLauncherForActivityResult(
@@ -252,9 +255,11 @@ fun ProfileEditScreen(
                 firstName = profile!!.firstName,
                 ageYears = profile!!.ageYears.toString(),
                 heightCm = profile!!.heightCm.toString(),
-                weightKg = profile!!.weightKg.toString(),
+                weightKg = profile!!.weightKg.toInt().toString(),
                 sex = profile!!.sex,
                 activityLevel = profile!!.activityLevel,
+                trainingDataSharingEnabled = trainingDataSharingEnabled,
+                healthConnectCaloriesEnabled = healthConnectCaloriesEnabled,
             )
             hasLoaded = true
         }
@@ -285,12 +290,16 @@ fun ProfileEditScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = currentBudget?.toString() ?: "Not set",
+                    text = estimatedBudget?.toString() ?: currentBudget?.toString() ?: "Not set",
                     style = MaterialTheme.typography.displaySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Changes apply from today onward and do not rewrite history.",
+                    text = if (estimatedBudget != null && currentBudget != null && estimatedBudget != currentBudget) {
+                        "Saving will update today's budget from $currentBudget to $estimatedBudget kcal without rewriting history."
+                    } else {
+                        "Changes apply from today onward and do not rewrite history."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -298,32 +307,44 @@ fun ProfileEditScreen(
         }
         OnboardingFields(
             state = form,
-            onFirstNameChanged = { form = form.copy(firstName = it) },
-            onAgeChanged = { form = form.copy(ageYears = it.filter(Char::isDigit)) },
-            onHeightChanged = { form = form.copy(heightCm = it.filter(Char::isDigit)) },
-            onWeightChanged = { value -> form = form.copy(weightKg = value.filter(Char::isDigit)) },
-            onSexChanged = { form = form.copy(sex = it) },
-            onActivityLevelChanged = { form = form.copy(activityLevel = it) },
+            fieldErrors = fieldErrors,
+            onFirstNameChanged = { value ->
+                form = form.copy(firstName = value)
+                if (hasAttemptedSave) fieldErrors = OnboardingValidator.validateFields(form)
+            },
+            onAgeChanged = { value ->
+                form = form.copy(ageYears = value.filter(Char::isDigit))
+                if (hasAttemptedSave) fieldErrors = OnboardingValidator.validateFields(form)
+            },
+            onHeightChanged = { value ->
+                form = form.copy(heightCm = value.filter(Char::isDigit))
+                if (hasAttemptedSave) fieldErrors = OnboardingValidator.validateFields(form)
+            },
+            onWeightChanged = { value ->
+                form = form.copy(weightKg = value.filter(Char::isDigit))
+                if (hasAttemptedSave) fieldErrors = OnboardingValidator.validateFields(form)
+            },
+            onSexChanged = {
+                form = form.copy(sex = it)
+                if (hasAttemptedSave) fieldErrors = OnboardingValidator.validateFields(form)
+            },
+            onActivityLevelChanged = {
+                form = form.copy(activityLevel = it)
+                if (hasAttemptedSave) fieldErrors = OnboardingValidator.validateFields(form)
+            },
         )
-        if (errors.isNotEmpty()) {
-            errors.forEach { issue ->
-                Text(
-                    text = issue,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
         Button(
             onClick = {
-                val issues = OnboardingValidator.validate(form)
-                if (issues.isNotEmpty()) {
-                    errors = issues
+                val issues = OnboardingValidator.validateFields(form)
+                if (issues.hasAny()) {
+                    hasAttemptedSave = true
+                    fieldErrors = issues
                     return@Button
                 }
                 scope.launch {
                     isSaving = true
-                    errors = emptyList()
+                    hasAttemptedSave = false
+                    fieldErrors = OnboardingValidator.FieldErrors()
                     container.saveUserProfileUseCase(
                         SaveUserProfileRequest(
                             firstName = form.firstName,
@@ -763,6 +784,21 @@ fun ProfileEditScreen(
             },
         )
     }
+}
+
+private fun OnboardingFormState.estimatedBudgetOrNull(
+    calorieBudgetCalculator: CalorieBudgetCalculator,
+): Int? {
+    val age = ageYears.toIntOrNull() ?: return null
+    val height = heightCm.toIntOrNull() ?: return null
+    val weight = weightKg.toIntOrNull() ?: return null
+    return calorieBudgetCalculator.calculateCaloriesPerDay(
+        sex = sex,
+        ageYears = age,
+        weightKg = weight.toDouble(),
+        heightCm = height,
+        activityLevel = activityLevel,
+    )
 }
 
 private fun combinedDownloadState(

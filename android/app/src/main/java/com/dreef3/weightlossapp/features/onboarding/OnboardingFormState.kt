@@ -10,5 +10,6 @@ data class OnboardingFormState(
     val weightKg: String = "",
     val sex: Sex = Sex.Female,
     val activityLevel: ActivityLevel = ActivityLevel.Moderate,
-    val healthConnectCaloriesEnabled: Boolean = false,
+    val trainingDataSharingEnabled: Boolean = true,
+    val healthConnectCaloriesEnabled: Boolean = true,
 )

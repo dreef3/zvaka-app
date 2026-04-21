@@ -1,12 +1,26 @@
 package com.dreef3.weightlossapp.features.onboarding
 
 object OnboardingValidator {
+    data class FieldErrors(
+        val firstName: String? = null,
+        val ageYears: String? = null,
+        val heightCm: String? = null,
+        val weightKg: String? = null,
+    ) {
+        fun hasAny(): Boolean =
+            firstName != null || ageYears != null || heightCm != null || weightKg != null
+
+        fun asList(): List<String> = listOfNotNull(firstName, ageYears, heightCm, weightKg)
+    }
+
+    fun validateFields(state: OnboardingFormState): FieldErrors = FieldErrors(
+        firstName = if (state.firstName.isBlank()) "First name is required" else null,
+        ageYears = if (state.ageYears.toIntOrNull() !in 1..120) "Age must be valid" else null,
+        heightCm = if (state.heightCm.toIntOrNull() !in 50..300) "Height must be valid" else null,
+        weightKg = if (state.weightKg.toIntOrNull() !in 20..500) "Weight must be valid" else null,
+    )
+
     fun validate(state: OnboardingFormState): List<String> {
-        val issues = mutableListOf<String>()
-        if (state.firstName.isBlank()) issues += "First name is required"
-        if (state.ageYears.toIntOrNull() !in 1..120) issues += "Age must be valid"
-        if (state.heightCm.toIntOrNull() !in 50..300) issues += "Height must be valid"
-        if (state.weightKg.toIntOrNull() !in 20..500) issues += "Weight must be valid"
-        return issues
+        return validateFields(state).asList()
     }
 }

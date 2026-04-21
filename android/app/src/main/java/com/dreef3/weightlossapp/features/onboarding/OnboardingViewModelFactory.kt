@@ -16,6 +16,9 @@ class OnboardingViewModelFactory(
             modelDownloadController = container.modelDownloadRepository,
             modelStorage = container.modelStorage,
             networkConnectionMonitor = container.networkConnectionMonitor,
+            healthConnectBackfillService = container.healthConnectBackfillService,
+            modelImprovementUploadScheduler = container.modelImprovementUploadScheduler,
+            modelImprovementUploader = container.modelImprovementUploader,
         ) as T
     }
 }

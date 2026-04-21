@@ -2,16 +2,14 @@ package com.dreef3.weightlossapp.features.onboarding
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import com.dreef3.weightlossapp.domain.model.ActivityLevel
 import com.dreef3.weightlossapp.domain.model.Sex
@@ -28,49 +25,59 @@ import com.dreef3.weightlossapp.domain.model.Sex
 @Composable
 fun OnboardingFields(
     state: OnboardingFormState,
+    fieldErrors: OnboardingValidator.FieldErrors = OnboardingValidator.FieldErrors(),
     onFirstNameChanged: (String) -> Unit,
     onAgeChanged: (String) -> Unit,
     onHeightChanged: (String) -> Unit,
     onWeightChanged: (String) -> Unit,
     onSexChanged: (Sex) -> Unit,
     onActivityLevelChanged: (ActivityLevel) -> Unit,
-    healthConnectAvailable: Boolean = false,
-    healthConnectNeedsProviderSetup: Boolean = false,
-    onHealthConnectCaloriesChanged: ((Boolean) -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         var sexExpanded by remember { mutableStateOf(false) }
         var activityExpanded by remember { mutableStateOf(false) }
 
         OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
             value = state.firstName,
             onValueChange = onFirstNameChanged,
             label = { Text("First name") },
+            isError = fieldErrors.firstName != null,
+            supportingText = fieldErrors.firstName?.let { error -> { Text(error) } },
         )
         OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
             value = state.ageYears,
             onValueChange = onAgeChanged,
             label = { Text("Age") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            isError = fieldErrors.ageYears != null,
+            supportingText = fieldErrors.ageYears?.let { error -> { Text(error) } },
         )
         OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
             value = state.heightCm,
             onValueChange = onHeightChanged,
             label = { Text("Height (cm)") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            isError = fieldErrors.heightCm != null,
+            supportingText = fieldErrors.heightCm?.let { error -> { Text(error) } },
         )
         OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
             value = state.weightKg,
             onValueChange = onWeightChanged,
             label = { Text("Weight (kg)") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            isError = fieldErrors.weightKg != null,
+            supportingText = fieldErrors.weightKg?.let { error -> { Text(error) } },
         )
         ExposedDropdownMenuBox(
             expanded = sexExpanded,
             onExpandedChange = { sexExpanded = !sexExpanded },
         ) {
             OutlinedTextField(
-                modifier = Modifier.menuAnchor(),
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
                 value = state.sex.name,
                 onValueChange = {},
                 readOnly = true,
@@ -97,7 +104,7 @@ fun OnboardingFields(
             onExpandedChange = { activityExpanded = !activityExpanded },
         ) {
             OutlinedTextField(
-                modifier = Modifier.menuAnchor(),
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
                 value = state.activityLevel.toLabel(),
                 onValueChange = {},
                 readOnly = true,
@@ -119,34 +126,6 @@ fun OnboardingFields(
                         },
                     )
                 }
-            }
-        }
-        if (onHealthConnectCaloriesChanged != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text("Sync calories to Health Connect")
-                    Text(
-                        text = if (healthConnectAvailable) {
-                            "Opt in to publish each saved meal's calories to Health Connect. You can change this later in Settings."
-                        } else if (healthConnectNeedsProviderSetup) {
-                            "Health Connect needs setup or an update before this app can request access."
-                        } else {
-                            "Health Connect is not available on this device."
-                        },
-                    )
-                }
-                Switch(
-                    checked = state.healthConnectCaloriesEnabled,
-                    enabled = healthConnectAvailable || healthConnectNeedsProviderSetup,
-                    onCheckedChange = onHealthConnectCaloriesChanged,
-                )
             }
         }
     }

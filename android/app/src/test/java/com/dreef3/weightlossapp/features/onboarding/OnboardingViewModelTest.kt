@@ -83,6 +83,50 @@ class OnboardingViewModelTest {
     }
 
     @Test
+    fun submitProfileExposesFieldErrorsUntilFormIsValid() = runTest(dispatcher) {
+        val repository = FakeProfileRepository()
+        val storage = ModelStorage(modelDirectoryOverride = kotlin.io.path.createTempDirectory().toFile())
+        val viewModel = createViewModel(repository, storage, FakeModelDownloadController())
+
+        viewModel.continueFromIntro()
+        viewModel.submitProfile()
+
+        assertEquals("First name is required", viewModel.uiState.value.fieldErrors.firstName)
+        assertEquals("Age must be valid", viewModel.uiState.value.fieldErrors.ageYears)
+        assertEquals("Height must be valid", viewModel.uiState.value.fieldErrors.heightCm)
+        assertEquals("Weight must be valid", viewModel.uiState.value.fieldErrors.weightKg)
+
+        viewModel.updateForm {
+            it.copy(
+                firstName = "Ana",
+                ageYears = "30",
+                heightCm = "170",
+                weightKg = "70",
+            )
+        }
+
+        assertEquals(OnboardingValidator.FieldErrors(), viewModel.uiState.value.fieldErrors)
+    }
+
+    @Test
+    fun firstRunDefaultsBothOptInsToEnabled() = runTest(dispatcher) {
+        val repository = FakeProfileRepository()
+        val storage = ModelStorage(modelDirectoryOverride = kotlin.io.path.createTempDirectory().toFile())
+        val preferences = testPreferences().also { it.setCompletedOnboarding(false) }
+        val viewModel = createViewModel(
+            repository = repository,
+            storage = storage,
+            modelController = FakeModelDownloadController(),
+            preferences = preferences,
+        )
+
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.form.healthConnectCaloriesEnabled)
+        assertTrue(viewModel.uiState.value.form.trainingDataSharingEnabled)
+    }
+
+    @Test
     fun startModelDownloadMovesToDownloadingAndThenReady() = runTest(dispatcher) {
         val repository = FakeProfileRepository()
         val storage = ModelStorage(modelDirectoryOverride = kotlin.io.path.createTempDirectory().toFile())

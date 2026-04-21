@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.imePadding
@@ -32,8 +33,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +59,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.dreef3.weightlossapp.BuildConfig
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.notifications.needsNotificationPermission
@@ -76,9 +82,16 @@ fun OnboardingScreenRoute(
     var onboardingDriveMessage by remember { mutableStateOf<String?>(null) }
     var onboardingNotificationMessage by remember { mutableStateOf<String?>(null) }
     var onboardingHealthConnectMessage by remember { mutableStateOf<String?>(null) }
+    var continueAfterHealthConnectPermission by remember { mutableStateOf(false) }
     var completeAfterModelPreparation by remember { mutableStateOf(false) }
     val healthConnectAvailable = container.healthConnectCaloriesExporter.isAvailable()
     val healthConnectNeedsProviderSetup = container.healthConnectCaloriesExporter.needsProviderSetup()
+    val trainingUploadConfigured =
+        BuildConfig.MODEL_IMPROVEMENT_API_BASE_URL.isNotBlank() &&
+            (
+                BuildConfig.MODEL_IMPROVEMENT_CLOUD_PROJECT_NUMBER > 0L ||
+                    (BuildConfig.DEBUG && BuildConfig.MODEL_IMPROVEMENT_DEBUG_TOKEN.isNotBlank())
+            )
     val hasCompletedOnboarding by container.preferences.hasCompletedOnboarding.collectAsStateWithLifecycle(initialValue = false)
 
     LaunchedEffect(state.isCompleted) {
@@ -171,6 +184,59 @@ fun OnboardingScreenRoute(
             onboardingHealthConnectMessage = "Health Connect permission was not granted, so calorie sync will stay off."
             vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
         }
+        if (continueAfterHealthConnectPermission) {
+            continueAfterHealthConnectPermission = false
+            if (needsNotificationPermission(context)) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                vm.requestModelDownload()
+            }
+        }
+    }
+
+    fun onHealthConnectOptInChanged(enabled: Boolean) {
+        onboardingHealthConnectMessage = null
+        vm.updateForm { it.copy(healthConnectCaloriesEnabled = enabled) }
+    }
+
+    fun continueFromBudgetPreview() {
+        scope.launch {
+            if (state.form.healthConnectCaloriesEnabled) {
+                when {
+                    healthConnectAvailable && !container.healthConnectCaloriesExporter.hasWritePermission() -> {
+                        continueAfterHealthConnectPermission = true
+                        healthConnectPermissionLauncher.launch(container.healthConnectCaloriesExporter.requiredPermissions())
+                        return@launch
+                    }
+                    healthConnectAvailable -> {
+                        onboardingHealthConnectMessage = "Health Connect permission is already granted."
+                    }
+                    healthConnectNeedsProviderSetup -> {
+                        onboardingHealthConnectMessage = "Health Connect needs setup or an update before this app can request access."
+                        vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
+                    }
+                    else -> {
+                        onboardingHealthConnectMessage = "Health Connect is not available on this device."
+                        vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
+                    }
+                }
+            }
+
+            if (needsNotificationPermission(context)) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                vm.requestModelDownload()
+            }
+        }
+    }
+
+    fun handleHealthConnectOptInChange(enabled: Boolean) {
+        if (!enabled) {
+            onboardingHealthConnectMessage = null
+            vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
+        } else {
+            onHealthConnectOptInChanged(true)
+        }
     }
 
     OnboardingScreen(
@@ -206,39 +272,13 @@ fun OnboardingScreenRoute(
         onWeightChanged = { value -> vm.updateForm { it.copy(weightKg = value.filter(Char::isDigit)) } },
         onSexChanged = { value -> vm.updateForm { it.copy(sex = value) } },
         onActivityLevelChanged = { value -> vm.updateForm { it.copy(activityLevel = value) } },
-        onHealthConnectCaloriesChanged = { enabled ->
-            if (!enabled) {
-                onboardingHealthConnectMessage = null
-                vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
-            } else if (healthConnectAvailable) {
-                scope.launch {
-                    if (container.healthConnectCaloriesExporter.hasWritePermission()) {
-                        onboardingHealthConnectMessage = "Health Connect permission is already granted."
-                        vm.updateForm { it.copy(healthConnectCaloriesEnabled = true) }
-                    } else {
-                        onboardingHealthConnectMessage = null
-                        vm.updateForm { it.copy(healthConnectCaloriesEnabled = true) }
-                        healthConnectPermissionLauncher.launch(container.healthConnectCaloriesExporter.requiredPermissions())
-                    }
-                }
-            } else if (healthConnectNeedsProviderSetup) {
-                onboardingHealthConnectMessage = "Opening Health Connect so you can finish setup and grant access."
-                vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
-                container.healthConnectCaloriesExporter.openProviderSetup()
-            } else {
-                onboardingHealthConnectMessage = "Health Connect is not available on this device."
-                vm.updateForm { it.copy(healthConnectCaloriesEnabled = false) }
-            }
+        onTrainingDataSharingChanged = { enabled ->
+            vm.updateForm { it.copy(trainingDataSharingEnabled = enabled) }
         },
+        onHealthConnectCaloriesChanged = ::handleHealthConnectOptInChange,
         onBackFromProfile = vm::backFromProfile,
         onSubmitProfile = vm::submitProfile,
-        onStartModelDownload = {
-            if (needsNotificationPermission(context)) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            } else {
-                vm.requestModelDownload()
-            }
-        },
+        onStartModelDownload = ::continueFromBudgetPreview,
         onConfirmCellularDownload = vm::confirmCellularModelDownload,
         onDismissCellularDownload = vm::dismissCellularModelDownloadConfirmation,
         onFinish = vm::completeSetup,
@@ -248,6 +288,7 @@ fun OnboardingScreenRoute(
         onboardingHealthConnectMessage = onboardingHealthConnectMessage,
         healthConnectAvailable = healthConnectAvailable,
         healthConnectNeedsProviderSetup = healthConnectNeedsProviderSetup,
+        trainingUploadConfigured = trainingUploadConfigured,
     )
 }
 
@@ -262,6 +303,7 @@ fun OnboardingScreen(
     onWeightChanged: (String) -> Unit,
     onSexChanged: (Sex) -> Unit,
     onActivityLevelChanged: (ActivityLevel) -> Unit,
+    onTrainingDataSharingChanged: (Boolean) -> Unit,
     onHealthConnectCaloriesChanged: (Boolean) -> Unit,
     onBackFromProfile: () -> Unit,
     onSubmitProfile: () -> Unit,
@@ -275,21 +317,39 @@ fun OnboardingScreen(
     onboardingHealthConnectMessage: String?,
     healthConnectAvailable: Boolean,
     healthConnectNeedsProviderSetup: Boolean,
+    trainingUploadConfigured: Boolean,
 ) {
     val compactLayout = LocalConfiguration.current.screenHeightDp < 780
     val outerPadding = if (compactLayout) 16.dp else 24.dp
     val sectionSpacing = if (compactLayout) 12.dp else 16.dp
+    val showBottomBar = state.step != OnboardingStep.Downloading
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
-            .padding(WindowInsets.safeDrawing.asPaddingValues()),
-    ) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets.safeDrawing,
+        bottomBar = {
+            if (showBottomBar) {
+                OnboardingBottomBar(
+                    step = state.step,
+                    isSaving = state.isSaving,
+                    isRestoringBackup = isRestoringBackup,
+                    downloadAlreadyInProgress = state.modelDownloadState.isDownloading,
+                    onContinueFromIntro = onContinueFromIntro,
+                    onRestoreFromDrive = onRestoreFromDrive,
+                    onBackFromProfile = onBackFromProfile,
+                    onSubmitProfile = onSubmitProfile,
+                    onStartModelDownload = onStartModelDownload,
+                    onFinish = onFinish,
+                )
+            }
+        },
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .padding(innerPadding)
+                .imePadding()
                 .padding(horizontal = outerPadding, vertical = outerPadding),
             verticalArrangement = Arrangement.spacedBy(sectionSpacing),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -310,9 +370,6 @@ fun OnboardingScreen(
                     )
                     when (state.step) {
                         OnboardingStep.DownloadIntro -> DownloadIntroStep(
-                            onContinue = onContinueFromIntro,
-                            onRestoreFromDrive = onRestoreFromDrive,
-                            isRestoringBackup = isRestoringBackup,
                             onboardingDriveMessage = onboardingDriveMessage,
                             compactLayout = compactLayout,
                         )
@@ -324,20 +381,19 @@ fun OnboardingScreen(
                             onWeightChanged = onWeightChanged,
                             onSexChanged = onSexChanged,
                             onActivityLevelChanged = onActivityLevelChanged,
-                            onHealthConnectCaloriesChanged = onHealthConnectCaloriesChanged,
-                            onBack = onBackFromProfile,
-                            onContinue = onSubmitProfile,
-                            onboardingHealthConnectMessage = onboardingHealthConnectMessage,
-                            healthConnectAvailable = healthConnectAvailable,
-                            healthConnectNeedsProviderSetup = healthConnectNeedsProviderSetup,
                             compactLayout = compactLayout,
                         )
                         OnboardingStep.BudgetPreview -> BudgetPreviewStep(
+                            state = state,
                             firstName = state.form.firstName,
                             estimatedBudgetCalories = state.estimatedBudgetCalories ?: 0,
-                            downloadAlreadyInProgress = state.modelDownloadState.isDownloading,
-                            onContinue = onStartModelDownload,
+                            onTrainingDataSharingChanged = onTrainingDataSharingChanged,
+                            onHealthConnectCaloriesChanged = onHealthConnectCaloriesChanged,
                             notificationMessage = onboardingNotificationMessage,
+                            healthConnectMessage = onboardingHealthConnectMessage,
+                            healthConnectAvailable = healthConnectAvailable,
+                            healthConnectNeedsProviderSetup = healthConnectNeedsProviderSetup,
+                            trainingUploadConfigured = trainingUploadConfigured,
                             compactLayout = compactLayout,
                         )
                         OnboardingStep.Downloading -> DownloadingStep(
@@ -346,7 +402,6 @@ fun OnboardingScreen(
                         )
                         OnboardingStep.Ready -> ReadyStep(
                             firstName = state.form.firstName,
-                            onFinish = onFinish,
                             compactLayout = compactLayout,
                         )
                     }
@@ -358,6 +413,105 @@ fun OnboardingScreen(
                 onConfirm = onConfirmCellularDownload,
                 onDismiss = onDismissCellularDownload,
             )
+        }
+    }
+}
+
+@Composable
+private fun OnboardingBottomBar(
+    step: OnboardingStep,
+    isSaving: Boolean,
+    isRestoringBackup: Boolean,
+    downloadAlreadyInProgress: Boolean,
+    onContinueFromIntro: () -> Unit,
+    onRestoreFromDrive: () -> Unit,
+    onBackFromProfile: () -> Unit,
+    onSubmitProfile: () -> Unit,
+    onStartModelDownload: () -> Unit,
+    onFinish: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.imePadding(),
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(PaddingValues(horizontal = 24.dp, vertical = 16.dp)),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 560.dp),
+            ) {
+                when (step) {
+                    OnboardingStep.DownloadIntro -> {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = onRestoreFromDrive,
+                                enabled = !isRestoringBackup,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(if (isRestoringBackup) "Restoring..." else "Restore from Google Drive")
+                            }
+                            Button(
+                                onClick = onContinueFromIntro,
+                                enabled = !isRestoringBackup,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Sounds good")
+                            }
+                        }
+                    }
+
+                    OnboardingStep.Profile -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = onBackFromProfile,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("Back")
+                            }
+                            Button(
+                                onClick = onSubmitProfile,
+                                enabled = !isSaving,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(if (isSaving) "Saving..." else "Continue")
+                            }
+                        }
+                    }
+
+                    OnboardingStep.BudgetPreview -> {
+                        Button(
+                            onClick = onStartModelDownload,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(if (downloadAlreadyInProgress) "See download progress" else "Start model download")
+                        }
+                    }
+
+                    OnboardingStep.Ready -> {
+                        Button(
+                            onClick = onFinish,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Everything is ready, let’s go")
+                        }
+                    }
+
+                    OnboardingStep.Downloading -> Unit
+                }
+            }
         }
     }
 }
@@ -382,9 +536,6 @@ private fun SetupHeader(
 
 @Composable
 private fun DownloadIntroStep(
-    onContinue: () -> Unit,
-    onRestoreFromDrive: () -> Unit,
-    isRestoringBackup: Boolean,
     onboardingDriveMessage: String?,
     compactLayout: Boolean,
 ) {
@@ -413,20 +564,6 @@ private fun DownloadIntroStep(
                 textAlign = TextAlign.Center,
             )
         }
-        OutlinedButton(
-            onClick = onRestoreFromDrive,
-            enabled = !isRestoringBackup,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (isRestoringBackup) "Restoring..." else "Restore from Google Drive")
-        }
-        Button(
-            onClick = onContinue,
-            enabled = !isRestoringBackup,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Sounds good")
-        }
     }
 }
 
@@ -439,12 +576,6 @@ private fun ProfileStep(
     onWeightChanged: (String) -> Unit,
     onSexChanged: (Sex) -> Unit,
     onActivityLevelChanged: (ActivityLevel) -> Unit,
-    onHealthConnectCaloriesChanged: (Boolean) -> Unit,
-    onBack: () -> Unit,
-    onContinue: () -> Unit,
-    onboardingHealthConnectMessage: String?,
-    healthConnectAvailable: Boolean,
-    healthConnectNeedsProviderSetup: Boolean,
     compactLayout: Boolean,
 ) {
     StepCard(compactLayout = compactLayout) {
@@ -455,58 +586,29 @@ private fun ProfileStep(
         )
         OnboardingFields(
             state = state.form,
+            fieldErrors = state.fieldErrors,
             onFirstNameChanged = onFirstNameChanged,
             onAgeChanged = onAgeChanged,
             onHeightChanged = onHeightChanged,
             onWeightChanged = onWeightChanged,
             onSexChanged = onSexChanged,
             onActivityLevelChanged = onActivityLevelChanged,
-            healthConnectAvailable = healthConnectAvailable,
-            healthConnectNeedsProviderSetup = healthConnectNeedsProviderSetup,
-            onHealthConnectCaloriesChanged = onHealthConnectCaloriesChanged,
         )
-        onboardingHealthConnectMessage?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        state.errors.forEach { error ->
-            Text(
-                text = error,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            OutlinedButton(
-                onClick = onBack,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Back")
-            }
-            Button(
-                onClick = onContinue,
-                enabled = !state.isSaving,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(if (state.isSaving) "Saving..." else "Continue")
-            }
-        }
     }
 }
 
 @Composable
 private fun BudgetPreviewStep(
+    state: OnboardingUiState,
     firstName: String,
     estimatedBudgetCalories: Int,
-    downloadAlreadyInProgress: Boolean,
-    onContinue: () -> Unit,
+    onTrainingDataSharingChanged: (Boolean) -> Unit,
+    onHealthConnectCaloriesChanged: (Boolean) -> Unit,
     notificationMessage: String?,
+    healthConnectMessage: String?,
+    healthConnectAvailable: Boolean,
+    healthConnectNeedsProviderSetup: Boolean,
+    trainingUploadConfigured: Boolean,
     compactLayout: Boolean,
 ) {
     StepCard(compactLayout = compactLayout) {
@@ -530,6 +632,40 @@ private fun BudgetPreviewStep(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        HorizontalDivider()
+        PreferenceToggleRow(
+            title = "Sync calories to Health Connect",
+            description = if (healthConnectAvailable) {
+                "When enabled, each saved meal publishes its calorie total to Health Connect as a nutrition record."
+            } else if (healthConnectNeedsProviderSetup) {
+                "Health Connect needs setup or an update before this app can request access."
+            } else {
+                "Health Connect is not available on this device."
+            },
+            checked = state.form.healthConnectCaloriesEnabled,
+            enabled = healthConnectAvailable || healthConnectNeedsProviderSetup,
+            onCheckedChange = onHealthConnectCaloriesChanged,
+        )
+        healthConnectMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        PreferenceToggleRow(
+            title = "Share meal data for model improvement",
+            description = if (!trainingUploadConfigured) {
+                "Model improvement upload is not configured for this build."
+            } else if (BuildConfig.DEBUG && BuildConfig.MODEL_IMPROVEMENT_DEBUG_TOKEN.isNotBlank()) {
+                "Debug build uploads use a local debug token instead of Play Integrity."
+            } else {
+                "When enabled, Žvaka uploads a downscaled meal photo, detected description, and calorie estimate after Play Integrity verification for recognized installs."
+            },
+            checked = state.form.trainingDataSharingEnabled,
+            enabled = trainingUploadConfigured,
+            onCheckedChange = onTrainingDataSharingChanged,
+        )
         notificationMessage?.let { message ->
             Text(
                 text = message,
@@ -538,12 +674,44 @@ private fun BudgetPreviewStep(
                 textAlign = TextAlign.Center,
             )
         }
-        Button(
-            onClick = onContinue,
-            modifier = Modifier.fillMaxWidth(),
+    }
+}
+
+@Composable
+private fun PreferenceToggleRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(if (downloadAlreadyInProgress) "See download progress" else "Start model download")
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange,
+        )
     }
 }
 
@@ -561,7 +729,6 @@ private fun DownloadingStep(
 @Composable
 private fun ReadyStep(
     firstName: String,
-    onFinish: () -> Unit,
     compactLayout: Boolean,
 ) {
     StepCard(compactLayout = compactLayout) {
@@ -578,12 +745,6 @@ private fun ReadyStep(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
-        Button(
-            onClick = onFinish,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Everything is ready, let’s go")
-        }
     }
 }
 

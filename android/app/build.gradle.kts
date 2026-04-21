@@ -3,8 +3,6 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
-    id("com.google.gms.google-services")
-    id("com.google.firebase.crashlytics")
 }
 
 import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
@@ -15,6 +13,33 @@ val signingProperties = Properties().apply {
     if (signingFile.exists()) {
         signingFile.inputStream().use(::load)
     }
+}
+
+val googleServicesFiles = listOf(
+    rootProject.file("app/google-services.json"),
+    rootProject.file("app/src/debug/google-services.json"),
+    rootProject.file("app/src/release/google-services.json"),
+)
+
+val hasGoogleServicesConfig = googleServicesFiles.any { it.exists() }
+val requestedTasks = gradle.startParameter.taskNames.map(String::lowercase)
+val debugOnlyBuildRequested =
+    requestedTasks.isNotEmpty() && requestedTasks.all { taskName ->
+        "debug" in taskName ||
+            taskName.contains("install") ||
+            taskName.contains("assemble") ||
+            taskName.contains("compile") ||
+            taskName.contains("bundle") ||
+            taskName.contains("connected") ||
+            taskName.contains("test")
+    } && requestedTasks.any { "debug" in it }
+val crashlyticsEnabled = hasGoogleServicesConfig || !debugOnlyBuildRequested
+
+if (crashlyticsEnabled) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
+} else {
+    logger.lifecycle("Skipping Google Services and Crashlytics plugins for debug build because google-services.json is missing.")
 }
 
 val localEnvProperties = Properties().apply {
@@ -134,8 +159,10 @@ android {
             ndk {
                 debugSymbolLevel = "FULL"
             }
-            configure<CrashlyticsExtension> {
-                nativeSymbolUploadEnabled = true
+            if (crashlyticsEnabled) {
+                configure<CrashlyticsExtension> {
+                    nativeSymbolUploadEnabled = true
+                }
             }
             if (signingConfigs.findByName("release") != null) {
                 signingConfig = signingConfigs.getByName("release")

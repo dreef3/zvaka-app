@@ -3,6 +3,8 @@ package com.dreef3.weightlossapp.features.onboarding
 import com.dreef3.weightlossapp.app.network.NetworkConnectionMonitor
 import com.dreef3.weightlossapp.app.network.NetworkConnectionType
 import com.dreef3.weightlossapp.app.health.HealthConnectBackfillService
+import com.dreef3.weightlossapp.app.training.ModelImprovementUploadScheduler
+import com.dreef3.weightlossapp.app.training.ModelImprovementUploader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
@@ -32,13 +34,14 @@ enum class OnboardingStep {
 data class OnboardingUiState(
     val step: OnboardingStep = OnboardingStep.DownloadIntro,
     val form: OnboardingFormState = OnboardingFormState(),
-    val errors: List<String> = emptyList(),
+    val fieldErrors: OnboardingValidator.FieldErrors = OnboardingValidator.FieldErrors(),
+    val hasAttemptedProfileSubmit: Boolean = false,
     val isSaving: Boolean = false,
     val isCompleted: Boolean = false,
     val estimatedBudgetCalories: Int? = null,
     val modelDownloadState: ModelDownloadState = ModelDownloadState(),
     val showCellularDownloadConfirmation: Boolean = false,
-    val hasInitializedHealthConnectChoice: Boolean = false,
+    val hasInitializedPreferenceChoices: Boolean = false,
 )
 
 class OnboardingViewModel(
@@ -50,6 +53,8 @@ class OnboardingViewModel(
     private val modelStorage: ModelStorage,
     private val networkConnectionMonitor: NetworkConnectionMonitor,
     private val healthConnectBackfillService: HealthConnectBackfillService? = null,
+    private val modelImprovementUploadScheduler: ModelImprovementUploadScheduler? = null,
+    private val modelImprovementUploader: ModelImprovementUploader? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
@@ -58,27 +63,39 @@ class OnboardingViewModel(
         viewModelScope.launch {
             combine(
                 profileRepository.observeProfile(),
+                preferences.hasCompletedOnboarding,
                 preferences.healthConnectCaloriesEnabled,
+                preferences.trainingDataSharingEnabled,
                 modelDownloadController.observeState(ModelDescriptors.gemma),
-            ) { profile, healthConnectEnabled, downloadState -> Triple(profile, healthConnectEnabled, downloadState) }
-                .collect { (profile, healthConnectEnabled, downloadState) ->
+            ) { profile, hasCompletedOnboarding, healthConnectEnabled, trainingDataSharingEnabled, downloadState ->
+                OnboardingBootstrapState(
+                    profile = profile,
+                    hasCompletedOnboarding = hasCompletedOnboarding,
+                    healthConnectEnabled = healthConnectEnabled,
+                    trainingDataSharingEnabled = trainingDataSharingEnabled,
+                    downloadState = downloadState,
+                )
+            }.collect { bootstrap ->
                     _uiState.update { current ->
-                        val formWithHealthConnect = if (!current.hasInitializedHealthConnectChoice) {
-                            current.form.copy(healthConnectCaloriesEnabled = healthConnectEnabled)
+                        val formWithPreferenceChoices = if (!current.hasInitializedPreferenceChoices && bootstrap.hasCompletedOnboarding) {
+                            current.form.copy(
+                                healthConnectCaloriesEnabled = bootstrap.healthConnectEnabled,
+                                trainingDataSharingEnabled = bootstrap.trainingDataSharingEnabled,
+                            )
                         } else {
                             current.form
                         }
-                        val populatedForm = if (profile != null && formWithHealthConnect.firstName.isBlank()) {
-                            formWithHealthConnect.copy(
-                                firstName = profile.firstName,
-                                ageYears = profile.ageYears.toString(),
-                                heightCm = profile.heightCm.toString(),
-                                weightKg = profile.weightKg.toInt().toString(),
-                                sex = profile.sex,
-                                activityLevel = profile.activityLevel,
+                        val populatedForm = if (bootstrap.profile != null && formWithPreferenceChoices.firstName.isBlank()) {
+                            formWithPreferenceChoices.copy(
+                                firstName = bootstrap.profile.firstName,
+                                ageYears = bootstrap.profile.ageYears.toString(),
+                                heightCm = bootstrap.profile.heightCm.toString(),
+                                weightKg = bootstrap.profile.weightKg.toInt().toString(),
+                                sex = bootstrap.profile.sex,
+                                activityLevel = bootstrap.profile.activityLevel,
                             )
                         } else {
-                            formWithHealthConnect
+                            formWithPreferenceChoices
                         }
 
                         val estimatedBudget = populatedForm.estimatedBudgetOrNull(budgetCalculator)
@@ -95,9 +112,9 @@ class OnboardingViewModel(
                             step = nextStep,
                             form = populatedForm,
                             estimatedBudgetCalories = estimatedBudget,
-                            modelDownloadState = downloadState,
+                            modelDownloadState = bootstrap.downloadState,
                             showCellularDownloadConfirmation = if (nextStep != current.step && nextStep == OnboardingStep.Ready) false else current.showCellularDownloadConfirmation,
-                            hasInitializedHealthConnectChoice = true,
+                            hasInitializedPreferenceChoices = true,
                         )
                     }
                 }
@@ -107,8 +124,14 @@ class OnboardingViewModel(
     fun updateForm(transform: (OnboardingFormState) -> OnboardingFormState) {
         _uiState.update { current ->
             val updatedForm = transform(current.form)
+            val fieldErrors = if (current.hasAttemptedProfileSubmit) {
+                OnboardingValidator.validateFields(updatedForm)
+            } else {
+                current.fieldErrors
+            }
             current.copy(
                 form = updatedForm,
+                fieldErrors = fieldErrors,
                 estimatedBudgetCalories = updatedForm.estimatedBudgetOrNull(budgetCalculator),
             )
         }
@@ -119,18 +142,35 @@ class OnboardingViewModel(
     }
 
     fun backFromProfile() {
-        _uiState.update { it.copy(step = OnboardingStep.DownloadIntro, errors = emptyList()) }
+        _uiState.update {
+            it.copy(
+                step = OnboardingStep.DownloadIntro,
+                fieldErrors = OnboardingValidator.FieldErrors(),
+                hasAttemptedProfileSubmit = false,
+            )
+        }
     }
 
     fun submitProfile() {
-        val issues = OnboardingValidator.validate(_uiState.value.form)
-        if (issues.isNotEmpty()) {
-            _uiState.update { it.copy(errors = issues) }
+        val fieldErrors = OnboardingValidator.validateFields(_uiState.value.form)
+        if (fieldErrors.hasAny()) {
+            _uiState.update {
+                it.copy(
+                    fieldErrors = fieldErrors,
+                    hasAttemptedProfileSubmit = true,
+                )
+            }
             return
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isSaving = true, errors = emptyList()) }
+            _uiState.update {
+                it.copy(
+                    isSaving = true,
+                    fieldErrors = OnboardingValidator.FieldErrors(),
+                    hasAttemptedProfileSubmit = false,
+                )
+            }
             val form = _uiState.value.form
             saveUserProfile(
                 SaveUserProfileRequest(
@@ -201,10 +241,27 @@ class OnboardingViewModel(
             if (enabled && !wasEnabled) {
                 healthConnectBackfillService?.backfillRecentEntries()
             }
+            val trainingEnabled = _uiState.value.form.trainingDataSharingEnabled
+            preferences.setTrainingDataSharingEnabled(trainingEnabled)
+            if (trainingEnabled) {
+                modelImprovementUploadScheduler?.enablePeriodicSync()
+                modelImprovementUploadScheduler?.enqueueImmediateSync()
+                modelImprovementUploader?.uploadPendingIfEnabled()
+            } else {
+                modelImprovementUploadScheduler?.disablePeriodicSync()
+            }
             preferences.setCompletedOnboarding(true)
         }
     }
 }
+
+private data class OnboardingBootstrapState(
+    val profile: com.dreef3.weightlossapp.domain.model.UserProfile?,
+    val hasCompletedOnboarding: Boolean,
+    val healthConnectEnabled: Boolean,
+    val trainingDataSharingEnabled: Boolean,
+    val downloadState: ModelDownloadState,
+)
 
 private fun OnboardingFormState.estimatedBudgetOrNull(calorieBudgetCalculator: CalorieBudgetCalculator): Int? {
     val age = ageYears.toIntOrNull() ?: return null
