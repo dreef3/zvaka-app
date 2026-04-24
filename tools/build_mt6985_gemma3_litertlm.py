@@ -60,7 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--quantization-recipe",
-        default="dynamic_int4_block32",
+        default="dynamic_wi4_afp32",
         help="Quantization recipe passed to litert-torch export",
     )
     parser.add_argument(
