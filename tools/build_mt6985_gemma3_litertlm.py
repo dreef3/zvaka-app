@@ -22,6 +22,11 @@ import sys
 import tempfile
 
 
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
+os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+
+
 def _add_python_path(path: pathlib.Path) -> None:
     resolved = str(path.resolve())
     if resolved not in sys.path:
