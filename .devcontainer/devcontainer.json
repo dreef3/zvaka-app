@@ -11,7 +11,9 @@
     "source=${localEnv:HOME}/.claude,target=/home/dev/.claude,type=bind",
     "source=${localEnv:HOME}/.config/opencode,target=/home/dev/.config/opencode,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.config/gh,target=/home/dev/.config/gh,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.codex,target=/home/dev/.codex,type=bind,consistency=cached"
+    "source=${localEnv:HOME}/.codex,target=/home/dev/.codex,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/src,target=/home/dev/src,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.cache/huggingface,target=/home/dev/.cache/huggingface,type=bind,consistency=cached"
   ],
   "remoteEnv": {
     "ANDROID_SDK_ROOT": "/opt/android-sdk",

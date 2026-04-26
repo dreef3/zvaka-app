@@ -1,13 +1,18 @@
 FROM eclipse-temurin:17-jdk-jammy
 
 SHELL ["/bin/bash", "-c"]
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Android SDK command-line tools
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV PATH="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools:${PATH}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates git unzip python3 python3-yaml jq \
+    curl ca-certificates git unzip gnupg software-properties-common \
+    python3 python3-pip python3-venv python3-yaml jq \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Android SDK command-line tools

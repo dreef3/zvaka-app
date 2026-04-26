@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import com.dreef3.weightlossapp.BuildConfig
+import com.dreef3.weightlossapp.chat.MediaTekNpuRuntime
 import com.dreef3.weightlossapp.data.preferences.GemmaBackend
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.google.ai.edge.litertlm.Backend
@@ -33,6 +34,7 @@ import kotlin.coroutines.resumeWithException
 class LiteRtFoodEstimationEngine(
     private val modelFile: File,
     private val backendPreferenceProvider: suspend () -> GemmaBackend = { GemmaBackend.GPU },
+    private val nativeLibraryDir: String = "",
 ) : FoodEstimationEngine {
     private val engineMutex = Mutex()
     private val inferenceMutex = Mutex()
@@ -143,11 +145,15 @@ class LiteRtFoodEstimationEngine(
         engine?.let { return it }
 
         logModelLookup("engine-init")
-        val attempts = when (backendPreferenceProvider()) {
+        val requestedBackend = backendPreferenceProvider()
+        if (requestedBackend == GemmaBackend.NPU) {
+            MediaTekNpuRuntime.prepare(nativeLibraryDir)
+        }
+        val attempts = when (requestedBackend) {
             GemmaBackend.NPU -> listOf(
                 "npu" to EngineConfig(
                     modelPath = modelFile.absolutePath,
-                    backend = Backend.NPU(),
+                    backend = Backend.NPU(nativeLibraryDir),
                     visionBackend = Backend.GPU(),
                     audioBackend = null,
                     maxNumTokens = DEFAULT_MAX_TOKENS,

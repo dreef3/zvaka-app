@@ -6,10 +6,13 @@ import com.dreef3.weightlossapp.app.health.HealthConnectBackfillService
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.chat.DietChatEngine
+import com.dreef3.weightlossapp.chat.DietChatMessage
+import com.dreef3.weightlossapp.chat.DietChatSnapshot
 import com.dreef3.weightlossapp.chat.DietEntryCorrectionService
 import com.dreef3.weightlossapp.chat.DietEntryInspectionService
 import com.dreef3.weightlossapp.chat.LiteRtDietChatEngine
 import com.dreef3.weightlossapp.chat.SelectableDietChatEngine
+import com.dreef3.weightlossapp.chat.requiredModelDescriptor
 import com.dreef3.weightlossapp.app.media.ModelDownloadRepository
 import com.dreef3.weightlossapp.app.media.ModelDownloader
 import com.dreef3.weightlossapp.app.media.ModelStorage
@@ -23,6 +26,7 @@ import com.dreef3.weightlossapp.app.sync.GoogleDriveSyncManager
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.data.local.AppDatabase
 import com.dreef3.weightlossapp.data.preferences.AppPreferences
+import com.dreef3.weightlossapp.data.preferences.GemmaBackend
 import com.dreef3.weightlossapp.data.repository.CoachChatRepositoryImpl
 import com.dreef3.weightlossapp.data.repository.FoodEntryRepositoryImpl
 import com.dreef3.weightlossapp.data.repository.ProfileRepositoryImpl
@@ -46,6 +50,7 @@ import com.dreef3.weightlossapp.work.WorkManagerEngineTaskQueue
 
 class AppContainer private constructor(context: Context) {
     val appContext: Context = context
+    private val nativeLibraryDir: String = context.applicationInfo.nativeLibraryDir.orEmpty()
     val database = AppDatabase.build(context)
     val driveSyncScheduler = DriveSyncScheduler(context)
     val preferences = AppPreferences(context, driveSyncScheduler)
@@ -111,6 +116,7 @@ class AppContainer private constructor(context: Context) {
     val gemmaFoodEstimationEngine: FoodEstimationEngine = LiteRtFoodEstimationEngine(
         modelFile = modelStorage.defaultModelFile,
         backendPreferenceProvider = preferences::readGemmaBackend,
+        nativeLibraryDir = nativeLibraryDir,
     )
     val foodEstimationEngine: FoodEstimationEngine = SelectableFoodEstimationEngine(
         preferences = preferences,
@@ -125,10 +131,43 @@ class AppContainer private constructor(context: Context) {
         correctionService = dietEntryCorrectionService,
         inspectionService = dietEntryInspectionService,
         backendPreferenceProvider = preferences::readGemmaBackend,
+        nativeLibraryDir = nativeLibraryDir,
     )
+    val qwenDietChatEngine: DietChatEngine = LiteRtDietChatEngine(
+        modelFile = modelStorage.fileFor(ModelDescriptors.qwenCoach),
+        correctionService = dietEntryCorrectionService,
+        inspectionService = dietEntryInspectionService,
+        backendPreferenceProvider = preferences::readGemmaBackend,
+        nativeLibraryDir = nativeLibraryDir,
+    )
+    val gemma3Mt6989DietChatEngine: DietChatEngine = LiteRtDietChatEngine(
+        modelFile = modelStorage.fileFor(ModelDescriptors.gemma3Mt6989Coach),
+        correctionService = dietEntryCorrectionService,
+        inspectionService = dietEntryInspectionService,
+        backendPreferenceProvider = preferences::readGemmaBackend,
+        nativeLibraryDir = nativeLibraryDir,
+    )
+    val selectedCoachNpuSmokeTestEngine: DietChatEngine = object : DietChatEngine {
+        override suspend fun sendMessage(
+            message: String,
+            history: List<DietChatMessage>,
+            snapshot: DietChatSnapshot,
+        ): Result<String> {
+            val selectedModel = preferences.readCoachModel().requiredModelDescriptor()
+            return LiteRtDietChatEngine(
+                modelFile = modelStorage.fileFor(selectedModel),
+                correctionService = dietEntryCorrectionService,
+                inspectionService = dietEntryInspectionService,
+                backendPreferenceProvider = { GemmaBackend.NPU },
+                nativeLibraryDir = nativeLibraryDir,
+            ).sendMessage(message, history, snapshot)
+        }
+    }
     val dietChatEngine: DietChatEngine = SelectableDietChatEngine(
         preferences = preferences,
         gemmaEngine = gemmaDietChatEngine,
+        qwenEngine = qwenDietChatEngine,
+        gemma3Mt6989Engine = gemma3Mt6989DietChatEngine,
     )
 
     companion object {

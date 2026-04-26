@@ -10,6 +10,7 @@ import androidx.lifecycle.lifecycleScope
 import com.dreef3.weightlossapp.BuildConfig
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.app.ui.theme.WeightLossAppTheme
+import com.dreef3.weightlossapp.chat.DietChatSnapshot
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
@@ -17,9 +18,13 @@ import com.google.android.play.core.appupdate.AppUpdateOptions
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.UpdateAvailability
 import java.time.Instant
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val debugScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var appUpdateManager: AppUpdateManager
     private var hasCheckedForImmediateUpdate = false
     private var shouldCheckForImmediateUpdate = false
@@ -38,6 +43,7 @@ class MainActivity : ComponentActivity() {
         AppContainer.initialize(applicationContext)
         AppInitializer.initialize(AppContainer.instance)
         handleIntentActions(intent, fromNewIntent = false)
+        maybeRunCoachNpuSmokeTest(intent)
         appUpdateManager = AppUpdateManagerFactory.create(applicationContext)
         setContent {
             WeightLossAppTheme {
@@ -138,7 +144,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun maybeRunCoachNpuSmokeTest(intent: Intent?) {
+        if (!BuildConfig.DEBUG || intent?.getBooleanExtra(EXTRA_RUN_COACH_NPU_SMOKE_TEST, false) != true) {
+            return
+        }
+        debugScope.launch {
+            val result = AppContainer.instance.selectedCoachNpuSmokeTestEngine.sendMessage(
+                message = "Reply with exactly OK.",
+                history = emptyList(),
+                snapshot = DietChatSnapshot(
+                    todayBudgetCalories = null,
+                    todayConsumedCalories = 0,
+                    todayRemainingCalories = null,
+                    entries = emptyList(),
+                ),
+            )
+            result
+                .onSuccess { reply -> Log.i(TAG, "Coach NPU smoke test succeeded: ${reply.take(120)}") }
+                .onFailure { throwable -> Log.e(TAG, "Coach NPU smoke test failed", throwable) }
+        }
+    }
+
     private companion object {
+        const val EXTRA_RUN_COACH_NPU_SMOKE_TEST = "runCoachNpuSmokeTest"
         const val TAG = "MainActivity"
         const val EXTRA_RETRIGGER_RECENT_MODEL_UPLOADS = "retrigger_recent_model_uploads"
         const val EXTRA_RECENT_MODEL_UPLOAD_DAYS = "recent_model_upload_days"

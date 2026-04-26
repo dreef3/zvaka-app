@@ -1,5 +1,6 @@
 package com.dreef3.weightlossapp.work
 
+import android.util.Log
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -29,7 +30,9 @@ class PhotoProcessingWorker(
 ) : CoroutineWorker(appContext, params) {
     private val notificationManager =
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    private val crashlytics = FirebaseCrashlytics.getInstance()
+    private val crashlytics = runCatching { FirebaseCrashlytics.getInstance() }
+        .onFailure { Log.w(TAG, "Crashlytics unavailable for photo worker", it) }
+        .getOrNull()
 
     override suspend fun doWork(): Result {
         val entryId = inputData.getLong(KEY_ENTRY_ID, 0L)
@@ -145,6 +148,8 @@ class PhotoProcessingWorker(
         imagePath: String,
         stage: String,
     ) {
+        Log.e(TAG, "Photo worker failure stage=$stage entryId=$entryId path=$imagePath", throwable)
+        val crashlytics = crashlytics ?: return
         crashlytics.setCustomKey("photo_worker_entry_id", entryId)
         crashlytics.setCustomKey("photo_worker_stage", stage)
         crashlytics.setCustomKey("photo_worker_image_path", imagePath)
@@ -188,6 +193,7 @@ class PhotoProcessingWorker(
 
         private const val CHANNEL_ID = "photo_estimation"
         private const val NOTIFICATION_ID = 1002
+        private const val TAG = "PhotoProcessingWorker"
 
         internal fun shouldRetryAfterFailure(throwable: Throwable?): Boolean =
             throwable is CancellationException ||
