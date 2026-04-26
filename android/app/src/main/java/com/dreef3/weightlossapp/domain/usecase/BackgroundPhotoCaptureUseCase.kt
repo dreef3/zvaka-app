@@ -17,6 +17,9 @@ class BackgroundPhotoCaptureUseCase(
     private val photoStorage: PhotoStorage,
 ) {
     suspend fun enqueue(imagePath: String, capturedAt: Instant): Long {
+        require(photoStorage.isReadablePhoto(imagePath)) {
+            "Captured photo is not readable: $imagePath"
+        }
         photoStorage.normalizePhoto(imagePath)
         val pendingEntry = FoodEntry(
             capturedAt = capturedAt,
@@ -41,7 +44,37 @@ class BackgroundPhotoCaptureUseCase(
     }
 
     suspend fun retry(entry: FoodEntry) {
+        if (!photoStorage.isReadablePhoto(entry.imagePath)) {
+            repository.upsert(
+                entry.copy(
+                    estimatedCalories = 0,
+                    finalCalories = 0,
+                    confidenceState = ConfidenceState.Failed,
+                    detectedFoodLabel = entry.detectedFoodLabel,
+                    confidenceNotes = "The saved photo is no longer readable on this device, so retry cannot run. Enter calories manually or recapture the meal photo.",
+                    confirmationStatus = ConfirmationStatus.NotRequired,
+                    source = FoodEntrySource.AiEstimate,
+                    entryStatus = FoodEntryStatus.NeedsManual,
+                ),
+            )
+            return
+        }
         photoStorage.normalizePhoto(entry.imagePath)
+        if (!photoStorage.isReadablePhoto(entry.imagePath)) {
+            repository.upsert(
+                entry.copy(
+                    estimatedCalories = 0,
+                    finalCalories = 0,
+                    confidenceState = ConfidenceState.Failed,
+                    detectedFoodLabel = entry.detectedFoodLabel,
+                    confidenceNotes = "The saved photo became unreadable during preparation, so retry cannot run. Enter calories manually or recapture the meal photo.",
+                    confirmationStatus = ConfirmationStatus.NotRequired,
+                    source = FoodEntrySource.AiEstimate,
+                    entryStatus = FoodEntryStatus.NeedsManual,
+                ),
+            )
+            return
+        }
         val retryingEntry = entry.copy(
             estimatedCalories = 0,
             finalCalories = 0,

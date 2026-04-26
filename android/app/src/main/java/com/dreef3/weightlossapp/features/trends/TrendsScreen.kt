@@ -81,10 +81,42 @@ fun TrendsScreen(
                 onSelectWindow = onSelectWindow,
             )
         }
+        if (state.processingCount > 0) {
+            item {
+                StatusCard(
+                    title = "Processing in background",
+                    body = "${state.processingCount} photo(s) in this history window are still being estimated. Retried older entries disappear from the list until processing finishes.",
+                )
+            }
+        }
         state.window?.let { window ->
             item { TrendOverviewCard(window = window) }
             item { TrendChartCard(window = window, dailyStats = state.dailyStats) }
             item { TrendStatsRow(window = window) }
+        }
+    }
+}
+
+@Composable
+private fun StatusCard(
+    title: String,
+    body: String,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

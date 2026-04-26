@@ -98,7 +98,7 @@ class PhotoProcessingWorker(
                         finalCalories = 0,
                         confidenceState = ConfidenceState.Failed,
                         detectedFoodLabel = null,
-                        confidenceNotes = "Photo saved. Automatic estimate was not reliable enough, so calories need manual entry.",
+                        confidenceNotes = failureMessage(throwable),
                         confirmationStatus = ConfirmationStatus.NotRequired,
                         source = FoodEntrySource.AiEstimate,
                         entryStatus = FoodEntryStatus.NeedsManual,
@@ -137,6 +137,18 @@ class PhotoProcessingWorker(
                 Result.failure()
             }
         }
+    }
+
+    private fun failureMessage(throwable: Throwable): String = when (throwable) {
+        is FoodEstimationException -> when (throwable.error) {
+            FoodEstimationError.UnreadableImage -> "The saved photo could not be read anymore, so retry cannot complete. Enter calories manually or recapture the meal photo."
+            FoodEstimationError.ModelUnavailable -> "The selected model is not available on this device yet. Download it and try again, or enter calories manually."
+            FoodEstimationError.InferenceTimeout -> "The estimate timed out. Try again in a moment, or enter calories manually."
+            FoodEstimationError.ModelLoadFailed,
+            FoodEstimationError.EstimationFailed,
+            -> "Photo saved. Automatic estimate was not reliable enough, so calories need manual entry."
+        }
+        else -> "Photo saved. Automatic estimate was not reliable enough, so calories need manual entry."
     }
 
     private fun recordWorkerException(
