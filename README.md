@@ -55,6 +55,12 @@ in:
 - `docs/mediatek-mt6985-gemma4-export.md`
 - `docs/mediatek-mt6985-npu-retrospective.md`
 
+## llama.cpp Vulkan Notes
+
+The revived local `llama.cpp + Vulkan` Gemma 4 path is documented in:
+
+- `docs/llamacpp-gemma4-vulkan-revival.md`
+
 ## Current Status
 
 The repository now contains the Android scaffold, Room/DataStore foundation,

@@ -10,6 +10,7 @@ import com.dreef3.weightlossapp.chat.DietChatMessage
 import com.dreef3.weightlossapp.chat.DietChatSnapshot
 import com.dreef3.weightlossapp.chat.DietEntryCorrectionService
 import com.dreef3.weightlossapp.chat.DietEntryInspectionService
+import com.dreef3.weightlossapp.chat.LlamaCppDietChatEngine
 import com.dreef3.weightlossapp.chat.LiteRtDietChatEngine
 import com.dreef3.weightlossapp.chat.SelectableDietChatEngine
 import com.dreef3.weightlossapp.chat.requiredModelDescriptor
@@ -133,6 +134,13 @@ class AppContainer private constructor(context: Context) {
         backendPreferenceProvider = preferences::readGemmaBackend,
         nativeLibraryDir = nativeLibraryDir,
     )
+    val gemmaGgufDietChatEngine: DietChatEngine = LlamaCppDietChatEngine(
+        container = this,
+        modelStorage = modelStorage,
+        modelDescriptor = ModelDescriptors.gemmaGgufCoach,
+        predictLength = 64,
+        generationTimeoutMs = 120_000L,
+    )
     val qwenDietChatEngine: DietChatEngine = LiteRtDietChatEngine(
         modelFile = modelStorage.fileFor(ModelDescriptors.qwenCoach),
         correctionService = dietEntryCorrectionService,
@@ -166,6 +174,7 @@ class AppContainer private constructor(context: Context) {
     val dietChatEngine: DietChatEngine = SelectableDietChatEngine(
         preferences = preferences,
         gemmaEngine = gemmaDietChatEngine,
+        gemmaGgufEngine = gemmaGgufDietChatEngine,
         qwenEngine = qwenDietChatEngine,
         gemma3Mt6989Engine = gemma3Mt6989DietChatEngine,
     )

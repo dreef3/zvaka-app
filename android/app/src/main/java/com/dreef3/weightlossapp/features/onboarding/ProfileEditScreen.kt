@@ -817,11 +817,11 @@ fun ProfileEditScreen(
                         scope.launch {
                             isResetting = true
                             withContext(Dispatchers.IO) {
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.gemma.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.qwenCoach.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext).cancelAllWork()
+                                val workManager = WorkManager.getInstance(container.appContext)
+                                ModelDescriptors.all.forEach { descriptor ->
+                                    workManager.cancelUniqueWork(descriptor.uniqueWorkName)
+                                }
+                                workManager.cancelAllWork()
                                 container.driveSyncScheduler.disablePeriodicSync()
                                 container.database.clearAllTables()
                                 container.preferences.reset()

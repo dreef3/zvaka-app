@@ -25,14 +25,17 @@ object AppInitializer {
             runCatching {
                 container.photoStorage.ensureDirectories()
                 container.modelStorage.modelDirectory.mkdirs()
-                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.gemma)
-                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.qwenCoach)
-                container.modelStorage.cleanupIncompleteModelFiles(ModelDescriptors.gemma3Mt6989Coach)
+                ModelDescriptors.all.forEach(container.modelStorage::cleanupIncompleteModelFiles)
                 normalizeStoredPhotosIfNeeded(container)
                 recoverStalePhotoProcessingEntries(container)
-                container.modelStorage.logState(tag = TAG, model = ModelDescriptors.gemma)
-                container.modelStorage.logState(tag = TAG, model = ModelDescriptors.qwenCoach)
-                container.modelStorage.logState(tag = TAG, model = ModelDescriptors.gemma3Mt6989Coach)
+                listOf(
+                    ModelDescriptors.gemma,
+                    ModelDescriptors.gemmaGgufCoach,
+                    ModelDescriptors.qwenCoach,
+                    ModelDescriptors.gemma3Mt6989Coach,
+                ).forEach { descriptor ->
+                    container.modelStorage.logState(tag = TAG, model = descriptor)
+                }
                 val driveSyncEnabled = runBlocking { container.preferences.readDriveSyncState().isEnabled }
                 val trainingDataSharingEnabled = runBlocking { container.preferences.trainingDataSharingEnabled.first() }
                 val selectedCoachModel = runBlocking { container.preferences.readCoachModel() }

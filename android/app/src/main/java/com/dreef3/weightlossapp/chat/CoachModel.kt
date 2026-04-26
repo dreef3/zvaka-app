@@ -5,6 +5,7 @@ enum class CoachModel(
     val displayName: String,
 ) {
     Gemma("gemma", "Gemma"),
+    GemmaGguf("gemma_gguf", "Gemma GGUF"),
     Qwen("qwen", "Qwen"),
     Gemma3Mt6989("gemma3_mt6989", "Gemma3 mt6989");
 

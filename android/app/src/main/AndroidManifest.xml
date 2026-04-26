@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.health.WRITE_NUTRITION" />
+    <uses-sdk tools:overrideLibrary="com.arm.aichat" />
 
     <application
         android:allowBackup="false"
