@@ -19,6 +19,15 @@ open class PhotoStorage(
 
     fun listPhotoFiles(): List<File> = photoDirectory.listFiles()?.filter(File::isFile).orEmpty()
 
+    fun isReadablePhoto(path: String): Boolean {
+        val file = File(path)
+        if (!file.exists() || !file.isFile || !file.canRead()) return false
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        return bounds.outWidth > 0 && bounds.outHeight > 0
+    }
+
     open fun normalizePhoto(path: String): Boolean {
         val file = File(path)
         if (!file.exists() || !file.isFile) return false
