@@ -34,6 +34,7 @@ interface CoachConversationRunner {
 class LiteRtConversationRunner(
     private val modelFile: File,
     private val backendPreferenceProvider: suspend () -> GemmaBackend,
+    private val nativeLibraryDir: String = "",
 ) : CoachConversationRunner {
     private val engineMutex = Mutex()
     private var engine: Engine? = null
@@ -53,12 +54,15 @@ class LiteRtConversationRunner(
 
     private suspend fun getOrCreateEngine(): Engine = engineMutex.withLock {
         val desiredPreference = backendPreferenceProvider().toEnginePreference()
-        engine?.takeIf { enginePreference?.mode == desiredPreference.mode }?.let { return it }
-        if (engine != null && enginePreference?.mode != desiredPreference.mode) {
+        engine?.takeIf { enginePreference == desiredPreference }?.let { return it }
+        if (engine != null && enginePreference != desiredPreference) {
             runCatching { engine?.close() }
                 .onFailure { Log.w(TAG, "Failed closing LiteRT coach engine during backend switch", it) }
             engine = null
             enginePreference = null
+        }
+        if (desiredPreference.mode == GemmaBackend.NPU) {
+            MediaTekNpuRuntime.prepare(nativeLibraryDir)
         }
         val engineConfig = EngineConfig(
             modelPath = modelFile.absolutePath,
@@ -68,11 +72,18 @@ class LiteRtConversationRunner(
             maxNumTokens = 4000,
             cacheDir = null,
         )
+        debugLog("Initializing coach engine backend=${desiredPreference.label} nativeLibraryDir=${nativeLibraryDir.ifBlank { "<default>" }}")
         return Engine(engineConfig).also { created ->
             created.initialize()
             engine = created
             enginePreference = desiredPreference
         }
+    }
+
+    private fun GemmaBackend.toEnginePreference(): GemmaBackendPreference = when (this) {
+        GemmaBackend.CPU -> GemmaBackendPreference(mode = this, backend = Backend.CPU())
+        GemmaBackend.GPU -> GemmaBackendPreference(mode = this, backend = Backend.GPU())
+        GemmaBackend.NPU -> GemmaBackendPreference(mode = this, backend = Backend.NPU(nativeLibraryDir))
     }
 
     @OptIn(ExperimentalApi::class)
@@ -129,11 +140,6 @@ class LiteRtConversationRunner(
 
     private fun debugLog(message: String) {
         if (BuildConfig.DEBUG) Log.d(TAG, message)
-    }
-
-    private fun GemmaBackend.toEnginePreference(): GemmaBackendPreference = when (this) {
-        GemmaBackend.CPU -> GemmaBackendPreference(mode = this, backend = Backend.CPU())
-        GemmaBackend.GPU -> GemmaBackendPreference(mode = this, backend = Backend.GPU())
     }
 
     private companion object {

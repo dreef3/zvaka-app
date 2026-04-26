@@ -46,6 +46,7 @@ import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.sync.DriveAuthorizationOutcome
 import com.dreef3.weightlossapp.app.sync.DriveSyncState
 import com.dreef3.weightlossapp.chat.CoachModel
+import com.dreef3.weightlossapp.chat.DietChatSnapshot
 import com.dreef3.weightlossapp.chat.requiredModelDescriptor
 import com.dreef3.weightlossapp.data.preferences.GemmaBackend
 import com.dreef3.weightlossapp.inference.CalorieEstimationModel
@@ -120,6 +121,8 @@ fun ProfileEditScreen(
     var pendingDriveAction by remember { mutableStateOf<PendingDriveAction?>(null) }
     var showAdvancedSettings by remember { mutableStateOf(false) }
     var healthConnectStatusMessage by remember { mutableStateOf<String?>(null) }
+    var qwenSmokeTestStatus by remember { mutableStateOf<String?>(null) }
+    var qwenSmokeTestRunning by remember { mutableStateOf(false) }
     val currentBudget = budgetPeriods.maxByOrNull { it.effectiveFromDate }?.caloriesPerDay
     val estimatedBudget = form.estimatedBudgetOrNull(container.budgetCalculator)
     val requiredResetName = profile?.firstName?.trim().orEmpty()
@@ -581,30 +584,56 @@ fun ProfileEditScreen(
                     Text(if (showAdvancedSettings) "Hide advanced settings" else "Show advanced settings")
                 }
                 if (showAdvancedSettings) {
-                    val gemmaReady = selectedCoachReady && selectedCalorieReady
-                    val gemmaDownloading = selectedCoachDownloadState.isDownloading || selectedCalorieDownloadState.isDownloading
-                    val gemmaProgress = listOfNotNull(
+                    val selectedCoachIsGemma = coachModel == CoachModel.Gemma
+                    val coachAndPhotoReady = selectedCoachReady && (!selectedCoachIsGemma || selectedCalorieReady)
+                    val coachAndPhotoDownloading = selectedCoachDownloadState.isDownloading || (selectedCoachIsGemma && selectedCalorieDownloadState.isDownloading)
+                    val coachAndPhotoProgress = listOfNotNull(
                         selectedCoachDownloadState.progressPercent,
-                        selectedCalorieDownloadState.progressPercent,
+                        selectedCalorieDownloadState.progressPercent.takeIf { selectedCoachIsGemma },
                     ).maxOrNull()
-                    val gemmaError = selectedCoachDownloadState.errorMessage ?: selectedCalorieDownloadState.errorMessage
+                    val coachAndPhotoError = selectedCoachDownloadState.errorMessage ?: selectedCalorieDownloadState.errorMessage.takeIf { selectedCoachIsGemma }
                     Text(
-                        text = "Local Gemma model",
+                        text = "Coach model",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        CoachModel.entries.forEach { model ->
+                            FilterChip(
+                                selected = coachModel == model,
+                                onClick = {
+                                    scope.launch {
+                                        container.preferences.setCoachModel(model)
+                                    }
+                                },
+                                label = { Text(model.displayName) },
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Local coach model",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = if (gemmaReady) {
-                            "${selectedCoachDescriptor.displayName} is ready on this device for both coaching and photo estimation."
-                        } else if (gemmaDownloading) {
-                            "Downloading ${selectedCoachDescriptor.displayName}... ${gemmaProgress ?: 0}%"
+                        text = if (coachAndPhotoReady) {
+                            if (selectedCoachIsGemma) {
+                                "${selectedCoachDescriptor.displayName} is ready on this device for both coaching and photo estimation."
+                            } else {
+                                "${selectedCoachDescriptor.displayName} is ready on this device for coaching. Photo estimation still uses ${selectedCalorieDescriptor.displayName}."
+                            }
+                        } else if (coachAndPhotoDownloading) {
+                            "Downloading ${selectedCoachDescriptor.displayName}... ${coachAndPhotoProgress ?: 0}%"
                         } else {
                             "${selectedCoachDescriptor.displayName} is not downloaded yet."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    gemmaError?.let { error ->
+                    coachAndPhotoError?.let { error ->
                         Text(
                             text = error,
                             style = MaterialTheme.typography.bodySmall,
@@ -612,15 +641,97 @@ fun ProfileEditScreen(
                         )
                     }
                     OutlinedButton(
-                        onClick = { container.modelDownloadRepository.enqueueIfNeeded(ModelDescriptors.gemma) },
-                        enabled = !gemmaReady && !gemmaDownloading,
+                        onClick = { container.modelDownloadRepository.enqueueIfNeeded(selectedCoachDescriptor) },
+                        enabled = !selectedCoachReady && !selectedCoachDownloadState.isDownloading,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
-                            if (gemmaDownloading) {
-                                "Downloading Gemma model..."
+                            if (selectedCoachDownloadState.isDownloading) {
+                                "Downloading ${selectedCoachDescriptor.displayName}..."
                             } else {
-                                "Download Gemma model"
+                                "Download ${selectedCoachDescriptor.displayName}"
+                            },
+                        )
+                    }
+                    if (!selectedCoachIsGemma) {
+                        Text(
+                            text = "This experimental coach model is chat-only. Photo estimation still depends on Gemma.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (BuildConfig.DEBUG) {
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    qwenSmokeTestRunning = true
+                                    qwenSmokeTestStatus = "Starting coach NPU smoke test..."
+                                    qwenSmokeTestStatus = withContext(Dispatchers.Default) {
+                                        container.selectedCoachNpuSmokeTestEngine
+                                            .sendMessage(
+                                                message = "Reply with exactly OK.",
+                                                history = emptyList(),
+                                                snapshot = DietChatSnapshot(
+                                                    todayBudgetCalories = null,
+                                                    todayConsumedCalories = 0,
+                                                    todayRemainingCalories = null,
+                                                    entries = emptyList(),
+                                                ),
+                                            )
+                                            .fold(
+                                                onSuccess = { reply -> "Coach NPU smoke test succeeded: ${reply.take(120)}" },
+                                                onFailure = { throwable -> "Coach NPU smoke test failed: ${throwable.message ?: throwable::class.simpleName.orEmpty()}" },
+                                            )
+                                    }
+                                    qwenSmokeTestRunning = false
+                                }
+                            },
+                            enabled = selectedCoachReady && !qwenSmokeTestRunning,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(if (qwenSmokeTestRunning) "Running coach NPU smoke test..." else "Run coach NPU smoke test")
+                        }
+                        qwenSmokeTestStatus?.let { status ->
+                            Text(
+                                text = status,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Local photo model",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = if (selectedCalorieReady) {
+                            "${selectedCalorieDescriptor.displayName} is ready on this device for photo estimation."
+                        } else if (selectedCalorieDownloadState.isDownloading) {
+                            "Downloading ${selectedCalorieDescriptor.displayName}... ${selectedCalorieDownloadState.progressPercent ?: 0}%"
+                        } else {
+                            "${selectedCalorieDescriptor.displayName} is not downloaded yet."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    selectedCalorieDownloadState.errorMessage?.let { error ->
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { container.modelDownloadRepository.enqueueIfNeeded(selectedCalorieDescriptor) },
+                        enabled = !selectedCalorieReady && !selectedCalorieDownloadState.isDownloading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (selectedCalorieDownloadState.isDownloading) {
+                                "Downloading ${selectedCalorieDescriptor.displayName}..."
+                            } else {
+                                "Download ${selectedCalorieDescriptor.displayName}"
                             },
                         )
                     }
@@ -649,6 +760,7 @@ fun ProfileEditScreen(
                         text = when (gemmaBackend) {
                             GemmaBackend.CPU -> "CPU is slower, but it is the safer path on this device."
                             GemmaBackend.GPU -> "GPU is faster when it works, but it can freeze or crash on unstable devices."
+                            GemmaBackend.NPU -> "NPU is the fastest path on supported devices. If startup fails for photo estimation, it falls back to GPU and then CPU."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -716,9 +828,11 @@ fun ProfileEditScreen(
                         scope.launch {
                             isResetting = true
                             withContext(Dispatchers.IO) {
-                                WorkManager.getInstance(container.appContext)
-                                    .cancelUniqueWork(ModelDescriptors.gemma.uniqueWorkName)
-                                WorkManager.getInstance(container.appContext).cancelAllWork()
+                                val workManager = WorkManager.getInstance(container.appContext)
+                                ModelDescriptors.all.forEach { descriptor ->
+                                    workManager.cancelUniqueWork(descriptor.uniqueWorkName)
+                                }
+                                workManager.cancelAllWork()
                                 container.driveSyncScheduler.disablePeriodicSync()
                                 container.database.clearAllTables()
                                 container.preferences.reset()

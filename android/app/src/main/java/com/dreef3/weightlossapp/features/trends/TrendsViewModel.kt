@@ -45,6 +45,7 @@ sealed interface TrendsHistoryItem {
 data class TrendsUiState(
     val selectedWindow: TrendWindowType = TrendWindowType.Last7Days,
     val window: TrendWindow? = null,
+    val processingCount: Int = 0,
     val historyEntries: List<FoodEntry> = emptyList(),
     val historyItems: List<TrendsHistoryItem> = emptyList(),
     val dailyStats: List<TrendDayStat> = emptyList(),
@@ -99,6 +100,12 @@ class TrendsViewModel(
                     entry.entryStatus != FoodEntryStatus.Processing
             }
             .sortedWith(compareByDescending<FoodEntry> { it.entryDate }.thenByDescending { it.capturedAt })
+        val processingCount = entries.count { entry ->
+            entry.deletedAt == null &&
+                entry.entryDate >= windowStart &&
+                entry.entryDate <= today &&
+                entry.entryStatus == FoodEntryStatus.Processing
+        }
         val filteredSessions = chatSessions
             .filter { session ->
                 val date = LocalDate.parse(session.sessionDateIso)
@@ -121,6 +128,7 @@ class TrendsViewModel(
                 dailyBudgets = budgetsByDate,
                 consumedByDate = consumedByDate,
             ),
+            processingCount = processingCount,
             historyEntries = filteredEntries,
             historyItems = buildList {
                 addAll(filteredEntries.map(TrendsHistoryItem::Meal))

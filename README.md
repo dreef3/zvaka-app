@@ -36,6 +36,31 @@ cd android && ./gradlew assembleDebugAndroidTest
 cd android && ./gradlew connectedDebugAndroidTest
 ```
 
+## Colab Export
+
+The repo includes a Google Colab notebook for the experimental Gemma 4 MT6985
+export path:
+
+- `notebooks/gemma4_mt6985_colab.ipynb`
+
+Use a High-RAM Colab runtime, set `APP_REPO_URL` to the GitHub clone URL for
+the repo or branch containing the notebook, and provide `HF_TOKEN` through
+Colab secrets or the environment before running the export cells.
+
+## MediaTek NPU Notes
+
+The current Gemma 4 / MediaTek MT6985 export and runtime findings are captured
+in:
+
+- `docs/mediatek-mt6985-gemma4-export.md`
+- `docs/mediatek-mt6985-npu-retrospective.md`
+
+## llama.cpp Vulkan Notes
+
+The revived local `llama.cpp + Vulkan` Gemma 4 path is documented in:
+
+- `docs/llamacpp-gemma4-vulkan-revival.md`
+
 ## Current Status
 
 The repository now contains the Android scaffold, Room/DataStore foundation,

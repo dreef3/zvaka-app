@@ -43,17 +43,18 @@ if (crashlyticsEnabled) {
 }
 
 val localEnvProperties = Properties().apply {
-    val envFile = rootProject.file("../.env.local")
-    if (envFile.exists()) {
-        envFile.forEachLine { rawLine ->
-            val line = rawLine.trim()
-            if (line.isEmpty() || line.startsWith("#")) return@forEachLine
-            val separatorIndex = line.indexOf('=')
-            if (separatorIndex <= 0) return@forEachLine
-            val key = line.substring(0, separatorIndex).trim()
-            val value = line.substring(separatorIndex + 1).trim()
-            setProperty(key, value)
-        }
+    listOf(
+        rootProject.file("../.env.local"),
+        rootProject.file("../../.env.local"),
+        rootProject.file("../../../.env.local"),
+    ).firstOrNull { it.exists() }?.forEachLine { rawLine ->
+        val line = rawLine.trim()
+        if (line.isEmpty() || line.startsWith("#")) return@forEachLine
+        val separatorIndex = line.indexOf('=')
+        if (separatorIndex <= 0) return@forEachLine
+        val key = line.substring(0, separatorIndex).trim()
+        val value = line.substring(separatorIndex + 1).trim()
+        setProperty(key, value)
     }
 }
 
@@ -199,6 +200,7 @@ android {
     packaging {
         jniLibs {
             keepDebugSymbols += "**/*.so"
+            useLegacyPackaging = true
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -247,6 +249,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.4.0")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("com.google.android.play:integrity:1.6.0")
+    implementation(project(":llamacpp"))
     implementation(firebaseBom)
     implementation("com.google.firebase:firebase-crashlytics")
     implementation("com.google.firebase:firebase-crashlytics-ndk")
@@ -258,8 +261,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.android.material:material:1.12.0")
-    implementation("com.google.ai.edge.litert:litert:2.1.0")
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
+    implementation("com.google.ai.edge.litert:litert:2.1.4")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.2")
     implementation("com.google.android.gms:play-services-tflite-java:16.4.0") {
         exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
     }

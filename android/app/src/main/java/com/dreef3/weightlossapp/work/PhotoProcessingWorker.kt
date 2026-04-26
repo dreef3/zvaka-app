@@ -1,5 +1,6 @@
 package com.dreef3.weightlossapp.work
 
+import android.util.Log
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -28,7 +29,9 @@ class PhotoProcessingWorker(
 ) : CoroutineWorker(appContext, params) {
     private val notificationManager =
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    private val crashlytics = FirebaseCrashlytics.getInstance()
+    private val crashlytics = runCatching { FirebaseCrashlytics.getInstance() }
+        .onFailure { Log.w(TAG, "Crashlytics unavailable for photo worker", it) }
+        .getOrNull()
 
     override suspend fun doWork(): Result {
         val entryId = inputData.getLong(KEY_ENTRY_ID, 0L)
@@ -95,7 +98,7 @@ class PhotoProcessingWorker(
                         finalCalories = 0,
                         confidenceState = ConfidenceState.Failed,
                         detectedFoodLabel = null,
-                        confidenceNotes = "Photo saved. Automatic estimate was not reliable enough, so calories need manual entry.",
+                        confidenceNotes = failureMessage(throwable),
                         confirmationStatus = ConfirmationStatus.NotRequired,
                         source = FoodEntrySource.AiEstimate,
                         entryStatus = FoodEntryStatus.NeedsManual,
@@ -136,12 +139,26 @@ class PhotoProcessingWorker(
         }
     }
 
+    private fun failureMessage(throwable: Throwable): String = when (throwable) {
+        is FoodEstimationException -> when (throwable.error) {
+            FoodEstimationError.UnreadableImage -> "The saved photo could not be read anymore, so retry cannot complete. Enter calories manually or recapture the meal photo."
+            FoodEstimationError.ModelUnavailable -> "The selected model is not available on this device yet. Download it and try again, or enter calories manually."
+            FoodEstimationError.InferenceTimeout -> "The estimate timed out. Try again in a moment, or enter calories manually."
+            FoodEstimationError.ModelLoadFailed,
+            FoodEstimationError.EstimationFailed,
+            -> "Photo saved. Automatic estimate was not reliable enough, so calories need manual entry."
+        }
+        else -> "Photo saved. Automatic estimate was not reliable enough, so calories need manual entry."
+    }
+
     private fun recordWorkerException(
         throwable: Throwable,
         entryId: Long,
         imagePath: String,
         stage: String,
     ) {
+        Log.e(TAG, "Photo worker failure stage=$stage entryId=$entryId path=$imagePath", throwable)
+        val crashlytics = crashlytics ?: return
         crashlytics.setCustomKey("photo_worker_entry_id", entryId)
         crashlytics.setCustomKey("photo_worker_stage", stage)
         crashlytics.setCustomKey("photo_worker_image_path", imagePath)
@@ -185,6 +202,7 @@ class PhotoProcessingWorker(
 
         private const val CHANNEL_ID = "photo_estimation"
         private const val NOTIFICATION_ID = 1002
+        private const val TAG = "PhotoProcessingWorker"
 
         internal fun shouldRetryAfterFailure(throwable: Throwable?): Boolean =
             throwable is CancellationException ||
