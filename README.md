@@ -61,6 +61,12 @@ The revived local `llama.cpp + Vulkan` Gemma 4 path is documented in:
 
 - `docs/llamacpp-gemma4-vulkan-revival.md`
 
+## BitNet Notes
+
+The initial BitNet feasibility and kernel/performance notes are captured in:
+
+- `docs/bitnet-experiment-notes.md`
+
 ## Current Status
 
 The repository now contains the Android scaffold, Room/DataStore foundation,
