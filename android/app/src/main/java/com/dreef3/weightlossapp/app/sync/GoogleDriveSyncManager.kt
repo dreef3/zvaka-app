@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.IntentSender
 import android.net.Uri
 import androidx.core.net.toUri
+import com.dreef3.weightlossapp.app.network.NetworkConnectionMonitor
+import com.dreef3.weightlossapp.app.network.NetworkConnectionType
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
@@ -44,6 +46,7 @@ class GoogleDriveSyncManager(
     private val context: Context,
     private val preferences: com.dreef3.weightlossapp.data.preferences.AppPreferences,
     private val backupManager: AppDataBackupManager,
+    private val networkConnectionMonitor: NetworkConnectionMonitor,
 ) {
     suspend fun authorizeInteractively(activity: Activity): DriveAuthorizationOutcome {
         val client = Identity.getAuthorizationClient(activity)
@@ -80,6 +83,7 @@ class GoogleDriveSyncManager(
     }
 
     suspend fun uploadBackup(accessToken: String, accountEmail: String?): DriveBackupMetadata = withContext(Dispatchers.IO) {
+        requireWifiForBackupUpload()
         val backupFile = File.createTempFile("drive-backup-", ".zip", context.cacheDir)
         try {
             backupFile.outputStream().use { output ->
@@ -116,6 +120,7 @@ class GoogleDriveSyncManager(
     }
 
     suspend fun tryUploadFromWorker(): Result<DriveBackupMetadata> = runCatching {
+        requireWifiForBackupUpload()
         val state = preferences.readDriveSyncState()
         if (!state.isEnabled) error("Google Drive sync is disabled.")
         when (val auth = authorizeSilently()) {
@@ -277,6 +282,19 @@ class GoogleDriveSyncManager(
             addOnFailureListener { error -> continuation.resumeWithException(error) }
             addOnCanceledListener { continuation.cancel() }
         }
+
+    private fun requireWifiForBackupUpload() {
+        val connectionType = networkConnectionMonitor.currentConnectionType()
+        check(connectionType == NetworkConnectionType.Wifi) {
+            when (connectionType) {
+                NetworkConnectionType.Cellular -> "Google Drive backup is Wi-Fi only and will not run on cellular."
+                NetworkConnectionType.Offline,
+                NetworkConnectionType.Other,
+                -> "Google Drive backup waits for a Wi-Fi connection."
+                NetworkConnectionType.Wifi -> ""
+            }
+        }
+    }
 
     private companion object {
         const val GOOGLE_ACCOUNT_TYPE = "com.google"

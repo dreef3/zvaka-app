@@ -81,7 +81,12 @@ class AppContainer private constructor(context: Context) {
     val networkConnectionMonitor = NetworkConnectionMonitor(context)
     val modelDownloadRepository = ModelDownloadRepository(context, modelStorage, networkConnectionMonitor)
     val appDataBackupManager = AppDataBackupManager(context, database, preferences)
-    val googleDriveSyncManager = GoogleDriveSyncManager(context, preferences, appDataBackupManager)
+    val googleDriveSyncManager = GoogleDriveSyncManager(
+        context,
+        preferences,
+        appDataBackupManager,
+        networkConnectionMonitor,
+    )
     val engineTaskQueue: EngineTaskQueue = WorkManagerEngineTaskQueue(context)
     val budgetCalculator = CalorieBudgetCalculator()
     val summaryAggregator = SummaryAggregator()

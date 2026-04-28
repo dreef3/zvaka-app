@@ -42,6 +42,7 @@ import androidx.work.WorkManager
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.app.media.ModelDownloadState
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
+import com.dreef3.weightlossapp.app.network.NetworkConnectionType
 import com.dreef3.weightlossapp.app.sync.DriveAuthorizationOutcome
 import com.dreef3.weightlossapp.app.sync.DriveSyncState
 import com.dreef3.weightlossapp.chat.CoachModel
@@ -157,11 +158,15 @@ fun ProfileEditScreen(
             PendingDriveAction.Connect -> {
                 container.preferences.setDriveSyncEnabled(true)
                 container.driveSyncScheduler.enablePeriodicSync()
-                container.googleDriveSyncManager.uploadBackup(
-                    accessToken = authorization.accessToken,
-                    accountEmail = authorization.accountEmail,
-                )
-                driveStatusMessage = "Google Drive connected. Automatic sync is on."
+                if (container.networkConnectionMonitor.currentConnectionType() == NetworkConnectionType.Wifi) {
+                    container.googleDriveSyncManager.uploadBackup(
+                        accessToken = authorization.accessToken,
+                        accountEmail = authorization.accountEmail,
+                    )
+                    driveStatusMessage = "Google Drive connected. Automatic sync is on."
+                } else {
+                    driveStatusMessage = "Google Drive connected. Automatic backup is on and will wait for Wi-Fi before uploading."
+                }
             }
 
             PendingDriveAction.SyncNow -> {
@@ -696,22 +701,13 @@ fun ProfileEditScreen(
                     }
                     Text(
                         text = if (selectedPhotoReady) {
-                            "${selectedPhotoDescriptor.displayName} is ready on this device for photo estimation."
-                        } else if (selectedAssetsDownloadState.isDownloading) {
-                            "Downloading ${selectedPhotoDescriptor.displayName}... ${selectedAssetsDownloadState.progressPercent ?: 0}%"
+                            "Photo estimation asset ready: ${selectedPhotoDescriptor.displayName}."
                         } else {
-                            "${selectedPhotoDescriptor.displayName} is not downloaded yet."
+                            "Photo estimation also requires ${selectedPhotoDescriptor.displayName}."
                         },
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    selectedAssetsDownloadState.errorMessage?.let { error ->
-                        Text(
-                            text = error,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
                     if (!coachModel.usesLlamaBackend()) {
                         Text(
                             text = "Gemma backend",

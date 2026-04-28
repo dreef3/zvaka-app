@@ -42,7 +42,7 @@ class DriveSyncScheduler(
 
     private fun networkConstraints(): Constraints =
         Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiredNetworkType(NetworkType.UNMETERED)
             .build()
 
     private companion object {
