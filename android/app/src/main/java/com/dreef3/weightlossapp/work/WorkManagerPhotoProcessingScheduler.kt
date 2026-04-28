@@ -29,7 +29,7 @@ class WorkManagerPhotoProcessingScheduler(
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             UNIQUE_WORK_PREFIX + entryId,
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.KEEP,
             request,
         )
     }

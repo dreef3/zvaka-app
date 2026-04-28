@@ -18,10 +18,10 @@ object ModelDescriptors {
     )
 
     val gemmaGgufCoach = ModelDescriptor(
-        fileName = "gemma-4-E2B-it-Q4_K_M.gguf",
-        displayName = "Gemma 4 E2B GGUF",
-        url = "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf?download=true",
-        totalBytes = 3_110_000_000L,
+        fileName = "gemma-4-E2B-it-Q4_K_S.gguf",
+        displayName = "Gemma 4 E2B GGUF (Q4_K_S)",
+        url = "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true",
+        totalBytes = 2_950_000_000L,
         uniqueWorkName = "model-download-gemma-gguf-coach",
     )
 

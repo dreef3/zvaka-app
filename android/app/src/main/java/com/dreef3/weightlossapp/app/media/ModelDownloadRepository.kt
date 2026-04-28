@@ -6,22 +6,32 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.dreef3.weightlossapp.app.network.NetworkConnectionMonitor
+import com.dreef3.weightlossapp.app.network.NetworkConnectionType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 interface ModelDownloadController {
-    fun enqueueIfNeeded(model: ModelDescriptor)
+    fun enqueueIfNeeded(model: ModelDescriptor, allowCellular: Boolean = false)
     fun observeState(model: ModelDescriptor): Flow<ModelDownloadState>
 }
 
 class ModelDownloadRepository(
     private val context: Context,
     private val modelStorage: ModelStorage,
+    private val networkConnectionMonitor: NetworkConnectionMonitor,
 ) : ModelDownloadController {
     private val workManager = WorkManager.getInstance(context)
 
-    override fun enqueueIfNeeded(model: ModelDescriptor) {
+    override fun enqueueIfNeeded(model: ModelDescriptor, allowCellular: Boolean) {
         if (modelStorage.hasUsableModel(model)) return
+        val connectionType = networkConnectionMonitor.currentConnectionType()
+        val canDownloadNow = when (connectionType) {
+            NetworkConnectionType.Wifi -> true
+            NetworkConnectionType.Cellular -> allowCellular
+            else -> false
+        }
+        if (!canDownloadNow) return
         val request = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
             .setInputData(
                 Data.Builder()

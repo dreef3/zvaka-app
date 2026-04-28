@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.app.model.ModelInvocationCoordinator
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.chat.CoachChatSession
 import com.dreef3.weightlossapp.domain.calculation.SummaryAggregator
@@ -53,7 +54,10 @@ data class TodaySummaryUiState(
     val manualEntries: List<FoodEntry> = emptyList(),
     val historyItems: List<TodayHistoryItem> = emptyList(),
     val lastActionMessage: String? = null,
-)
+) {
+    val showBackgroundProcessingBanner: Boolean
+        get() = queueActiveLabel != null || queueWaitingCount > 0 || processingCount > 0
+}
 
 class TodaySummaryViewModel(
     localDateProvider: LocalDateProvider,
@@ -90,6 +94,9 @@ class TodaySummaryViewModel(
                 budgetCalories = budget,
                 entries = todayEntries,
             )
+            val visibleProcessingCount = entries.count {
+                it.entryStatus == FoodEntryStatus.Processing && it.deletedAt == null
+            }
             TodaySummaryUiState(
                 summary = summary,
                 isEmpty = summary.entryCount == 0,

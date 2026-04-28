@@ -55,7 +55,7 @@ public:
         const char * mmproj_path = env->GetStringUTFChars(j_mmproj_path, nullptr);
 
         llama_model_params model_params = llama_model_default_params();
-        model_params.n_gpu_layers = 0;
+        model_params.n_gpu_layers = 999;
         LOGi("Loading multimodal model from %s with mmproj %s (n_gpu_layers=%d)",
              model_path, mmproj_path, model_params.n_gpu_layers);
         model_ = llama_model_load_from_file(model_path, model_params);
@@ -98,7 +98,7 @@ public:
         tmpls_ = common_chat_templates_init(model_, "");
 
         mtmd_context_params mtmd_params = mtmd_context_params_default();
-        mtmd_params.use_gpu = false;
+        mtmd_params.use_gpu = true;
         mtmd_params.print_timings = false;
         mtmd_params.n_threads = n_threads;
         mtmd_params.warmup = false;

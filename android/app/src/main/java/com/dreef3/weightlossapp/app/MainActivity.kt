@@ -13,6 +13,7 @@ import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.app.ui.theme.WeightLossAppTheme
 import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.chat.DietChatSnapshot
+import com.dreef3.weightlossapp.chat.requiredPhotoModelDescriptors
 import com.dreef3.weightlossapp.chat.requiredModelDescriptor
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
@@ -181,11 +182,16 @@ class MainActivity : ComponentActivity() {
         if (!BuildConfig.DEBUG || intent == null) return
         val requestedCoachModel = intent.getStringExtra(EXTRA_SET_COACH_MODEL_STORAGE_KEY)
             ?.let(CoachModel::fromStorageKey)
+        val retryFoodEntryId = intent.getLongExtra(EXTRA_RETRY_FOOD_ENTRY_ID, 0L)
+            .takeIf { it > 0L }
         val shouldDownloadSelectedModel = intent.getBooleanExtra(EXTRA_DOWNLOAD_SELECTED_COACH_MODEL, false)
+        val shouldDownloadSelectedPhotoModels = intent.getBooleanExtra(EXTRA_DOWNLOAD_SELECTED_PHOTO_MODELS, false)
         val shouldRunSelectedSmokeTest = intent.getBooleanExtra(EXTRA_RUN_SELECTED_COACH_SMOKE_TEST, false)
         val shouldRunSelectedDoubleSmokeTest = intent.getBooleanExtra(EXTRA_RUN_SELECTED_COACH_DOUBLE_SMOKE_TEST, false)
         if (requestedCoachModel == null &&
+            retryFoodEntryId == null &&
             !shouldDownloadSelectedModel &&
+            !shouldDownloadSelectedPhotoModels &&
             !shouldRunSelectedSmokeTest &&
             !shouldRunSelectedDoubleSmokeTest
         ) {
@@ -198,6 +204,16 @@ class MainActivity : ComponentActivity() {
             if (requestedCoachModel != null) {
                 container.preferences.setCoachModel(coachModel)
                 Log.i(TAG, "Debug coach action set coachModel=${coachModel.storageKey}")
+            }
+
+            if (retryFoodEntryId != null) {
+                val entry = container.foodEntryRepository.getEntry(retryFoodEntryId)
+                if (entry == null) {
+                    Log.e(TAG, "Debug retry failed: entryId=$retryFoodEntryId not found")
+                } else {
+                    container.backgroundPhotoCaptureUseCase.retry(entry)
+                    Log.i(TAG, "Debug retry queued entryId=$retryFoodEntryId path=${entry.imagePath}")
+                }
             }
 
             val descriptor = coachModel.requiredModelDescriptor()
@@ -215,6 +231,24 @@ class MainActivity : ComponentActivity() {
                     .onFailure { throwable ->
                         Log.e(TAG, "Debug coach download failed for ${descriptor.fileName}", throwable)
                     }
+            }
+
+            if (shouldDownloadSelectedPhotoModels) {
+                coachModel.requiredPhotoModelDescriptors().forEach { photoDescriptor ->
+                    container.modelDownloader.downloadFrom(photoDescriptor) { downloadedBytes, totalBytes ->
+                        val percent = if (totalBytes > 0L) (downloadedBytes * 100L) / totalBytes else 0L
+                        Log.i(
+                            TAG,
+                            "Debug photo-model download ${photoDescriptor.fileName}: ${percent}% (${downloadedBytes}/${totalBytes})",
+                        )
+                    }
+                        .onSuccess {
+                            Log.i(TAG, "Debug photo-model download complete path=${it.absolutePath} bytes=${it.length()}")
+                        }
+                        .onFailure { throwable ->
+                            Log.e(TAG, "Debug photo-model download failed for ${photoDescriptor.fileName}", throwable)
+                        }
+                }
             }
 
             if (shouldRunSelectedSmokeTest || shouldRunSelectedDoubleSmokeTest) {
@@ -250,7 +284,9 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val EXTRA_SET_COACH_MODEL_STORAGE_KEY = "setCoachModelStorageKey"
+        const val EXTRA_RETRY_FOOD_ENTRY_ID = "retryFoodEntryId"
         const val EXTRA_DOWNLOAD_SELECTED_COACH_MODEL = "downloadSelectedCoachModel"
+        const val EXTRA_DOWNLOAD_SELECTED_PHOTO_MODELS = "downloadSelectedPhotoModels"
         const val EXTRA_RUN_COACH_NPU_SMOKE_TEST = "runCoachNpuSmokeTest"
         const val EXTRA_RUN_SELECTED_COACH_DOUBLE_SMOKE_TEST = "runSelectedCoachDoubleSmokeTest"
         const val EXTRA_RUN_SELECTED_COACH_SMOKE_TEST = "runSelectedCoachSmokeTest"

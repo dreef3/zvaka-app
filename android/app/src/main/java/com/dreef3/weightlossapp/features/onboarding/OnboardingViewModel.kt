@@ -215,15 +215,15 @@ class OnboardingViewModel(
 
     fun confirmCellularModelDownload() {
         _uiState.update { it.copy(showCellularDownloadConfirmation = false) }
-        startModelDownload()
+        startModelDownload(allowCellular = true)
     }
 
     fun dismissCellularModelDownloadConfirmation() {
         _uiState.update { it.copy(showCellularDownloadConfirmation = false) }
     }
 
-    private fun startModelDownload() {
-        modelDownloadController.enqueueIfNeeded(ModelDescriptors.gemma)
+    private fun startModelDownload(allowCellular: Boolean = false) {
+        modelDownloadController.enqueueIfNeeded(ModelDescriptors.gemma, allowCellular = allowCellular)
         _uiState.update {
             it.copy(
                 step = if (modelStorage.hasUsableModel(ModelDescriptors.gemma)) OnboardingStep.Ready else OnboardingStep.Downloading,

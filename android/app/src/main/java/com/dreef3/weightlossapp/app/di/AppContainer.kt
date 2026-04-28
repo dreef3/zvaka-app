@@ -47,6 +47,7 @@ import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileUseCase
 import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
 import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import com.dreef3.weightlossapp.inference.FoodEstimationEngine
+import com.dreef3.weightlossapp.inference.LlamaCppSmolVlmFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.LiteRtFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.QueuedFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.SelectableFoodEstimationEngine
@@ -76,10 +77,10 @@ class AppContainer private constructor(context: Context) {
     val modelImprovementUploader = ModelImprovementUploader(context, preferences, foodEntryRepository)
     val modelStorage = ModelStorage(context)
     val modelDownloader = ModelDownloader(modelStorage)
-    val modelDownloadRepository = ModelDownloadRepository(context, modelStorage)
+    val networkConnectionMonitor = NetworkConnectionMonitor(context)
+    val modelDownloadRepository = ModelDownloadRepository(context, modelStorage, networkConnectionMonitor)
     val appDataBackupManager = AppDataBackupManager(context, database, preferences)
     val googleDriveSyncManager = GoogleDriveSyncManager(context, preferences, appDataBackupManager)
-    val networkConnectionMonitor = NetworkConnectionMonitor(context)
     val engineTaskQueue: EngineTaskQueue = WorkManagerEngineTaskQueue(context)
     val budgetCalculator = CalorieBudgetCalculator()
     val summaryAggregator = SummaryAggregator()
@@ -122,9 +123,14 @@ class AppContainer private constructor(context: Context) {
         backendPreferenceProvider = preferences::readGemmaBackend,
         nativeLibraryDir = nativeLibraryDir,
     )
+    val llamaFoodEstimationEngine: FoodEstimationEngine = LlamaCppSmolVlmFoodEstimationEngine(
+        context = context,
+        modelStorage = modelStorage,
+    )
     private val rawFoodEstimationEngine: FoodEstimationEngine = SelectableFoodEstimationEngine(
         preferences = preferences,
-        gemmaEngine = gemmaFoodEstimationEngine,
+        liteRtEngine = gemmaFoodEstimationEngine,
+        llamaEngine = llamaFoodEstimationEngine,
     )
     val foodEstimationEngine: FoodEstimationEngine = QueuedFoodEstimationEngine(
         delegate = rawFoodEstimationEngine,

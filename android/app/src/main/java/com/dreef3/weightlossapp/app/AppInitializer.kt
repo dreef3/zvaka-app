@@ -5,9 +5,10 @@ import com.dreef3.weightlossapp.BuildConfig
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.network.NetworkConnectionType
+import com.dreef3.weightlossapp.chat.requiredPhotoModelDescriptors
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import com.dreef3.weightlossapp.chat.requiredModelDescriptor
-import com.dreef3.weightlossapp.inference.requiredModelDescriptors
+import com.dreef3.weightlossapp.work.PendingPhotoRecoveryScheduler
 import java.time.Instant
 import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.first
@@ -25,6 +26,7 @@ object AppInitializer {
             runCatching {
                 container.photoStorage.ensureDirectories()
                 container.modelStorage.modelDirectory.mkdirs()
+                PendingPhotoRecoveryScheduler.schedule(container.appContext)
                 ModelDescriptors.all.forEach(container.modelStorage::cleanupIncompleteModelFiles)
                 normalizeStoredPhotosIfNeeded(container)
                 recoverStalePhotoProcessingEntries(container)
@@ -39,7 +41,6 @@ object AppInitializer {
                 val driveSyncEnabled = runBlocking { container.preferences.readDriveSyncState().isEnabled }
                 val trainingDataSharingEnabled = runBlocking { container.preferences.trainingDataSharingEnabled.first() }
                 val selectedCoachModel = runBlocking { container.preferences.readCoachModel() }
-                val selectedCalorieModel = runBlocking { container.preferences.readCalorieEstimationModel() }
                 if (driveSyncEnabled) {
                     container.driveSyncScheduler.enablePeriodicSync()
                 } else {
@@ -64,7 +65,7 @@ object AppInitializer {
                         container.modelDownloadRepository.enqueueIfNeeded(selectedCoachModel.requiredModelDescriptor())
                         debugLog("Scheduled ${selectedCoachModel.displayName} background download on Wi-Fi")
                     }
-                    selectedCalorieModel.requiredModelDescriptors().forEach { descriptor ->
+                    selectedCoachModel.requiredPhotoModelDescriptors().forEach { descriptor ->
                         if (!container.modelStorage.hasUsableModel(descriptor)) {
                             container.modelDownloadRepository.enqueueIfNeeded(descriptor)
                         }
@@ -95,19 +96,27 @@ object AppInitializer {
                     entry.capturedAtEpochMs < cutoffEpochMs
             }
             staleEntries.forEach { entry ->
-                foodEntryDao.update(
-                    entry.copy(
-                        estimatedCalories = 0,
-                        finalCalories = 0,
-                        confidenceState = "Failed",
-                        detectedFoodLabel = null,
-                        confidenceNotes = "Photo saved. Background processing stopped before finishing, so calories need manual entry.",
-                        entryStatus = FoodEntryStatus.NeedsManual.name,
-                    ),
-                )
+                if (container.photoStorage.isReadablePhoto(entry.imagePath)) {
+                    container.photoProcessingScheduler.enqueue(
+                        entryId = entry.id,
+                        imagePath = entry.imagePath,
+                        capturedAtEpochMs = entry.capturedAtEpochMs,
+                    )
+                } else {
+                    foodEntryDao.update(
+                        entry.copy(
+                            estimatedCalories = 0,
+                            finalCalories = 0,
+                            confidenceState = "Failed",
+                            detectedFoodLabel = null,
+                            confidenceNotes = "The saved photo is no longer readable on this device, so background processing could not resume. Enter calories manually or recapture the meal photo.",
+                            entryStatus = FoodEntryStatus.NeedsManual.name,
+                        ),
+                    )
+                }
             }
             if (staleEntries.isNotEmpty()) {
-                debugLog("Recovered ${staleEntries.size} stale processing photo entries")
+                debugLog("Reconciled ${staleEntries.size} stale processing photo entries")
             }
         }
     }
