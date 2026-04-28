@@ -47,6 +47,7 @@ import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileUseCase
 import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
 import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import com.dreef3.weightlossapp.inference.FoodEstimationEngine
+import com.dreef3.weightlossapp.inference.LlamaCppMultimodalFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.LlamaCppSmolVlmFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.LiteRtFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.QueuedFoodEstimationEngine
@@ -123,9 +124,11 @@ class AppContainer private constructor(context: Context) {
         backendPreferenceProvider = preferences::readGemmaBackend,
         nativeLibraryDir = nativeLibraryDir,
     )
-    val llamaFoodEstimationEngine: FoodEstimationEngine = LlamaCppSmolVlmFoodEstimationEngine(
+    val llamaFoodEstimationEngine: FoodEstimationEngine = LlamaCppMultimodalFoodEstimationEngine(
         context = context,
         modelStorage = modelStorage,
+        modelDescriptor = ModelDescriptors.gemmaGgufCoach,
+        mmprojDescriptor = ModelDescriptors.gemmaGgufMmproj,
     )
     private val rawFoodEstimationEngine: FoodEstimationEngine = SelectableFoodEstimationEngine(
         preferences = preferences,

@@ -13,7 +13,7 @@ fun CoachModel.requiredModelDescriptor(): ModelDescriptor = when (this) {
 fun CoachModel.usesLlamaBackend(): Boolean = this == CoachModel.GemmaGguf
 
 fun CoachModel.requiredPhotoModelDescriptors(): List<ModelDescriptor> = when (this) {
-    CoachModel.GemmaGguf -> listOf(ModelDescriptors.smolVlm, ModelDescriptors.smolVlmMmproj)
+    CoachModel.GemmaGguf -> listOf(ModelDescriptors.gemmaGgufCoach, ModelDescriptors.gemmaGgufMmproj)
     CoachModel.Gemma,
     CoachModel.Qwen,
     CoachModel.Gemma3Mt6989,

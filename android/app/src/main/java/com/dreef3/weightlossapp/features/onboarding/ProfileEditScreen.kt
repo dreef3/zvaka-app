@@ -87,21 +87,27 @@ fun ProfileEditScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val activity = context as? Activity
+    val selectedCoachDescriptor = coachModel.requiredModelDescriptor()
+    val selectedAssetDescriptors = remember(coachModel) {
+        buildList {
+            add(selectedCoachDescriptor)
+            coachModel.requiredPhotoModelDescriptors().forEach { descriptor ->
+                if (none { it.fileName == descriptor.fileName }) add(descriptor)
+            }
+        }
+    }
     val selectedPhotoDescriptor = coachModel.primaryPhotoModelDescriptor()
-    val selectedPhotoStateFlow = remember(coachModel, container) {
+    val selectedAssetsStateFlow = remember(coachModel, container) {
         combinedDownloadState(
             modelDownloadController = container.modelDownloadRepository,
-            models = coachModel.requiredPhotoModelDescriptors(),
+            models = selectedAssetDescriptors,
         )
     }
-    val selectedPhotoDownloadState by selectedPhotoStateFlow
-        .collectAsStateWithLifecycle(initialValue = ModelDownloadState())
-    val selectedPhotoReady = coachModel.requiredPhotoModelDescriptors().all(container.modelStorage::hasUsableModel)
-    val selectedCoachDescriptor = coachModel.requiredModelDescriptor()
-    val selectedCoachDownloadState by container.modelDownloadRepository
-        .observeState(selectedCoachDescriptor)
+    val selectedAssetsDownloadState by selectedAssetsStateFlow
         .collectAsStateWithLifecycle(initialValue = ModelDownloadState())
     val selectedCoachReady = container.modelStorage.hasUsableModel(selectedCoachDescriptor)
+    val selectedPhotoReady = coachModel.requiredPhotoModelDescriptors().all(container.modelStorage::hasUsableModel)
+    val selectedAssetsReady = selectedAssetDescriptors.all(container.modelStorage::hasUsableModel)
     val healthConnectAvailable = container.healthConnectCaloriesExporter.isAvailable()
     val healthConnectNeedsProviderSetup = container.healthConnectCaloriesExporter.needsProviderSetup()
 
@@ -573,13 +579,10 @@ fun ProfileEditScreen(
                 }
                 if (showAdvancedSettings) {
                     val selectedCoachUsesLlama = coachModel.usesLlamaBackend()
-                    val coachAndPhotoReady = selectedCoachReady && selectedPhotoReady
-                    val coachAndPhotoDownloading = selectedCoachDownloadState.isDownloading || selectedPhotoDownloadState.isDownloading
-                    val coachAndPhotoProgress = listOfNotNull(
-                        selectedCoachDownloadState.progressPercent,
-                        selectedPhotoDownloadState.progressPercent,
-                    ).maxOrNull()
-                    val coachAndPhotoError = selectedCoachDownloadState.errorMessage ?: selectedPhotoDownloadState.errorMessage
+                    val coachAndPhotoReady = selectedAssetsReady
+                    val coachAndPhotoDownloading = selectedAssetsDownloadState.isDownloading
+                    val coachAndPhotoProgress = selectedAssetsDownloadState.progressPercent
+                    val coachAndPhotoError = selectedAssetsDownloadState.errorMessage
                     Text(
                         text = "Model engine",
                         style = MaterialTheme.typography.labelLarge,
@@ -629,15 +632,17 @@ fun ProfileEditScreen(
                         )
                     }
                     OutlinedButton(
-                        onClick = { container.modelDownloadRepository.enqueueIfNeeded(selectedCoachDescriptor) },
-                        enabled = !selectedCoachReady && !selectedCoachDownloadState.isDownloading,
+                        onClick = {
+                            selectedAssetDescriptors.forEach(container.modelDownloadRepository::enqueueIfNeeded)
+                        },
+                        enabled = !selectedAssetsReady && !selectedAssetsDownloadState.isDownloading,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
-                            if (selectedCoachDownloadState.isDownloading) {
-                                "Downloading ${selectedCoachDescriptor.displayName}..."
+                            if (selectedAssetsDownloadState.isDownloading) {
+                                "Downloading required assets..."
                             } else {
-                                "Download coach model"
+                                "Download required assets"
                             },
                         )
                     }
@@ -692,34 +697,19 @@ fun ProfileEditScreen(
                     Text(
                         text = if (selectedPhotoReady) {
                             "${selectedPhotoDescriptor.displayName} is ready on this device for photo estimation."
-                        } else if (selectedPhotoDownloadState.isDownloading) {
-                            "Downloading ${selectedPhotoDescriptor.displayName}... ${selectedPhotoDownloadState.progressPercent ?: 0}%"
+                        } else if (selectedAssetsDownloadState.isDownloading) {
+                            "Downloading ${selectedPhotoDescriptor.displayName}... ${selectedAssetsDownloadState.progressPercent ?: 0}%"
                         } else {
                             "${selectedPhotoDescriptor.displayName} is not downloaded yet."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    selectedPhotoDownloadState.errorMessage?.let { error ->
+                    selectedAssetsDownloadState.errorMessage?.let { error ->
                         Text(
                             text = error,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            coachModel.requiredPhotoModelDescriptors().forEach(container.modelDownloadRepository::enqueueIfNeeded)
-                        },
-                        enabled = !selectedPhotoReady && !selectedPhotoDownloadState.isDownloading,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            if (selectedPhotoDownloadState.isDownloading) {
-                                "Downloading ${selectedPhotoDescriptor.displayName}..."
-                            } else {
-                                "Download photo model"
-                            },
                         )
                     }
                     if (!coachModel.usesLlamaBackend()) {

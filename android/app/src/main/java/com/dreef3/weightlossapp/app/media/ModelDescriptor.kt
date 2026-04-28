@@ -25,6 +25,14 @@ object ModelDescriptors {
         uniqueWorkName = "model-download-gemma-gguf-coach",
     )
 
+    val gemmaGgufMmproj = ModelDescriptor(
+        fileName = "mmproj-F16.gguf",
+        displayName = "Gemma 4 mmproj",
+        url = "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true",
+        totalBytes = 668_000_000L,
+        uniqueWorkName = "model-download-gemma-gguf-mmproj",
+    )
+
     val qwenCoach = ModelDescriptor(
         fileName = "Qwen3-0.6B.mediatek.mt6993.litertlm",
         displayName = "Qwen3 0.6B (MediaTek NPU)",
@@ -116,6 +124,7 @@ object ModelDescriptors {
     val all = listOf(
         gemma,
         gemmaGgufCoach,
+        gemmaGgufMmproj,
         qwenCoach,
         gemma3Mt6989Coach,
         smolVlmTflite,
