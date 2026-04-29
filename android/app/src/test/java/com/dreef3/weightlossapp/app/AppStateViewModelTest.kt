@@ -102,7 +102,7 @@ private class FakeProfileRepository : ProfileRepository {
 }
 
 private class FakeModelDownloadController : ModelDownloadController {
-    override fun enqueueIfNeeded(model: ModelDescriptor) = Unit
+    override fun enqueueIfNeeded(model: ModelDescriptor, allowCellular: Boolean) = Unit
 
     override fun observeState(model: ModelDescriptor): Flow<ModelDownloadState> = flowOf(ModelDownloadState())
 }

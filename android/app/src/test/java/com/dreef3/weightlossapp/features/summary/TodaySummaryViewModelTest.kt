@@ -1,6 +1,7 @@
 package com.dreef3.weightlossapp.features.summary
 
 import android.content.ContextWrapper
+import com.dreef3.weightlossapp.app.model.ModelInvocationCoordinator
 import com.dreef3.weightlossapp.app.media.PhotoStorage
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.chat.ChatRole
@@ -78,6 +79,7 @@ class TodaySummaryViewModelTest {
             foodEntryRepository = foodRepository,
             coachChatRepository = EmptyCoachChatRepository(),
             summaryAggregator = SummaryAggregator(),
+            modelInvocationCoordinator = ModelInvocationCoordinator(),
             backgroundPhotoCaptureUseCase = BackgroundPhotoCaptureUseCase(
                 repository = foodRepository,
                 engineTaskQueue = NoopEngineTaskQueue(),

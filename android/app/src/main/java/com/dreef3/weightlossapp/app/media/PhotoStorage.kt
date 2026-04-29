@@ -19,7 +19,7 @@ open class PhotoStorage(
 
     fun listPhotoFiles(): List<File> = photoDirectory.listFiles()?.filter(File::isFile).orEmpty()
 
-    fun isReadablePhoto(path: String): Boolean {
+    open fun isReadablePhoto(path: String): Boolean {
         val file = File(path)
         if (!file.exists() || !file.isFile || !file.canRead()) return false
 

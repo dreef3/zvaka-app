@@ -109,6 +109,8 @@ fun ProfileEditScreen(
     val selectedCoachReady = container.modelStorage.hasUsableModel(selectedCoachDescriptor)
     val selectedPhotoReady = coachModel.requiredPhotoModelDescriptors().all(container.modelStorage::hasUsableModel)
     val selectedAssetsReady = selectedAssetDescriptors.all(container.modelStorage::hasUsableModel)
+    val currentConnectionType = container.networkConnectionMonitor.currentConnectionType()
+    val canDownloadModelsNow = currentConnectionType == NetworkConnectionType.Wifi
     val healthConnectAvailable = container.healthConnectCaloriesExporter.isAvailable()
     val healthConnectNeedsProviderSetup = container.healthConnectCaloriesExporter.needsProviderSetup()
 
@@ -636,16 +638,30 @@ fun ProfileEditScreen(
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
+                    if (!selectedAssetsReady && !canDownloadModelsNow) {
+                        Text(
+                            text = when (currentConnectionType) {
+                                NetworkConnectionType.Cellular -> "Model downloads are Wi-Fi only. Connect to Wi-Fi to download the required assets."
+                                NetworkConnectionType.Offline -> "Connect to Wi‑Fi to download the required assets."
+                                NetworkConnectionType.Other -> "Model downloads are restricted to Wi‑Fi for now."
+                                NetworkConnectionType.Wifi -> ""
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     OutlinedButton(
                         onClick = {
                             selectedAssetDescriptors.forEach(container.modelDownloadRepository::enqueueIfNeeded)
                         },
-                        enabled = !selectedAssetsReady && !selectedAssetsDownloadState.isDownloading,
+                        enabled = !selectedAssetsReady && !selectedAssetsDownloadState.isDownloading && canDownloadModelsNow,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
                             if (selectedAssetsDownloadState.isDownloading) {
                                 "Downloading required assets..."
+                            } else if (!canDownloadModelsNow && !selectedAssetsReady) {
+                                "Wi‑Fi required for download"
                             } else {
                                 "Download required assets"
                             },

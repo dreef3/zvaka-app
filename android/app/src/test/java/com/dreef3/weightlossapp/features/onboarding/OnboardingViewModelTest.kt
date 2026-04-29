@@ -276,7 +276,7 @@ private class FakeModelDownloadController : ModelDownloadController {
     val state = MutableStateFlow(ModelDownloadState())
     var enqueueCalls = 0
 
-    override fun enqueueIfNeeded(model: ModelDescriptor) {
+    override fun enqueueIfNeeded(model: ModelDescriptor, allowCellular: Boolean) {
         enqueueCalls += 1
         state.value = ModelDownloadState(isDownloading = true, progressPercent = 0)
     }

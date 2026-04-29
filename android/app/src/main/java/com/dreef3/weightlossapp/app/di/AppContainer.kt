@@ -13,7 +13,6 @@ import com.dreef3.weightlossapp.chat.DietEntryCorrectionService
 import com.dreef3.weightlossapp.chat.DietEntryInspectionService
 import com.dreef3.weightlossapp.chat.LlamaCppDietChatEngine
 import com.dreef3.weightlossapp.chat.LiteRtDietChatEngine
-import com.dreef3.weightlossapp.chat.QueuedDietChatEngine
 import com.dreef3.weightlossapp.chat.SelectableDietChatEngine
 import com.dreef3.weightlossapp.chat.requiredModelDescriptor
 import com.dreef3.weightlossapp.app.media.ModelDownloadRepository
@@ -50,7 +49,6 @@ import com.dreef3.weightlossapp.inference.FoodEstimationEngine
 import com.dreef3.weightlossapp.inference.LlamaCppMultimodalFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.LlamaCppSmolVlmFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.LiteRtFoodEstimationEngine
-import com.dreef3.weightlossapp.inference.QueuedFoodEstimationEngine
 import com.dreef3.weightlossapp.inference.SelectableFoodEstimationEngine
 import com.dreef3.weightlossapp.work.WorkManagerEngineTaskQueue
 
@@ -140,11 +138,7 @@ class AppContainer private constructor(context: Context) {
         liteRtEngine = gemmaFoodEstimationEngine,
         llamaEngine = llamaFoodEstimationEngine,
     )
-    val foodEstimationEngine: FoodEstimationEngine = QueuedFoodEstimationEngine(
-        delegate = rawFoodEstimationEngine,
-        coordinator = modelInvocationCoordinator,
-        label = "photo_estimation",
-    )
+    val foodEstimationEngine: FoodEstimationEngine = rawFoodEstimationEngine
     val dietEntryInspectionService = DietEntryInspectionService(
         foodEntryRepository = foodEntryRepository,
         foodEstimationEngine = rawFoodEstimationEngine,
@@ -193,11 +187,7 @@ class AppContainer private constructor(context: Context) {
             ).sendMessage(message, history, snapshot)
         }
     }
-    val selectedCoachNpuSmokeTestEngine: DietChatEngine = QueuedDietChatEngine(
-        delegate = rawSelectedCoachNpuSmokeTestEngine,
-        coordinator = modelInvocationCoordinator,
-        label = "coach_npu_smoke",
-    )
+    val selectedCoachNpuSmokeTestEngine: DietChatEngine = rawSelectedCoachNpuSmokeTestEngine
     private val rawDietChatEngine: DietChatEngine = SelectableDietChatEngine(
         preferences = preferences,
         gemmaEngine = gemmaDietChatEngine,
@@ -205,11 +195,7 @@ class AppContainer private constructor(context: Context) {
         qwenEngine = qwenDietChatEngine,
         gemma3Mt6989Engine = gemma3Mt6989DietChatEngine,
     )
-    val dietChatEngine: DietChatEngine = QueuedDietChatEngine(
-        delegate = rawDietChatEngine,
-        coordinator = modelInvocationCoordinator,
-        label = "coach_chat",
-    )
+    val dietChatEngine: DietChatEngine = rawDietChatEngine
 
     companion object {
         @Volatile

@@ -97,7 +97,7 @@ object AppInitializer {
             }
             staleEntries.forEach { entry ->
                 if (container.photoStorage.isReadablePhoto(entry.imagePath)) {
-                    container.photoProcessingScheduler.enqueue(
+                    container.engineTaskQueue.enqueuePhotoEstimate(
                         entryId = entry.id,
                         imagePath = entry.imagePath,
                         capturedAtEpochMs = entry.capturedAtEpochMs,

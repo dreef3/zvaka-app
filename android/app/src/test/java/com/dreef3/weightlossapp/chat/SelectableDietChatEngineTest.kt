@@ -18,6 +18,9 @@ class SelectableDietChatEngineTest {
         val engine = SelectableDietChatEngine(
             preferences = preferences,
             gemmaEngine = FakeDietChatEngine("gemma"),
+            gemmaGgufEngine = FakeDietChatEngine("gemma-gguf"),
+            qwenEngine = FakeDietChatEngine("qwen"),
+            gemma3Mt6989Engine = FakeDietChatEngine("gemma3"),
         )
 
         val result = engine.sendMessage("hello", emptyList(), emptySnapshot()).getOrThrow()
@@ -32,6 +35,9 @@ class SelectableDietChatEngineTest {
         val engine = SelectableDietChatEngine(
             preferences = preferences,
             gemmaEngine = FakeDietChatEngine("gemma"),
+            gemmaGgufEngine = FakeDietChatEngine("gemma-gguf"),
+            qwenEngine = FakeDietChatEngine("qwen"),
+            gemma3Mt6989Engine = FakeDietChatEngine("gemma3"),
         )
 
         val result = engine.sendMessage("hello", emptyList(), emptySnapshot()).getOrThrow()
