@@ -4,6 +4,8 @@ import android.util.Log
 import com.dreef3.weightlossapp.app.health.HealthConnectCaloriesExporter
 import com.dreef3.weightlossapp.app.sync.DriveSyncTrigger
 import com.dreef3.weightlossapp.app.sync.NoOpDriveSyncTrigger
+import com.dreef3.weightlossapp.app.widget.NoOpWidgetRefreshTrigger
+import com.dreef3.weightlossapp.app.widget.WidgetRefreshTrigger
 import com.dreef3.weightlossapp.data.preferences.AppPreferences
 import com.dreef3.weightlossapp.data.local.dao.FoodEntryDao
 import com.dreef3.weightlossapp.domain.model.FoodEntry
@@ -17,6 +19,7 @@ import java.time.Instant
 class FoodEntryRepositoryImpl(
     private val foodEntryDao: FoodEntryDao,
     private val driveSyncTrigger: DriveSyncTrigger = NoOpDriveSyncTrigger,
+    private val widgetRefreshTrigger: WidgetRefreshTrigger = NoOpWidgetRefreshTrigger,
     private val preferences: AppPreferences? = null,
     private val healthConnectCaloriesExporter: HealthConnectCaloriesExporter? = null,
 ) : FoodEntryRepository {
@@ -66,6 +69,7 @@ class FoodEntryRepositoryImpl(
                 Log.w(TAG, "Failed publishing Health Connect calories for entryId=$entryId", throwable)
             }
         requestDriveSync("food_entry:upsert")
+        widgetRefreshTrigger.requestRefresh("food_entry:upsert")
         return entryId
     }
 
@@ -80,6 +84,7 @@ class FoodEntryRepositoryImpl(
             ).toEntity(),
         )
         requestDriveSync("food_entry:delete")
+        widgetRefreshTrigger.requestRefresh("food_entry:delete")
     }
 
     private fun requestDriveSync(reason: String) {

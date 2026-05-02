@@ -11,6 +11,7 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.dreef3.weightlossapp.R
 import com.dreef3.weightlossapp.app.di.AppContainer
+import com.dreef3.weightlossapp.app.widget.HomeStatusWidgetUpdater
 import com.dreef3.weightlossapp.chat.ChatRole
 import com.dreef3.weightlossapp.chat.DietChatSnapshot
 import com.dreef3.weightlossapp.chat.DietEntryContext
@@ -41,19 +42,23 @@ class PersistentEngineTaskWorker(
         AppContainer.initialize(applicationContext)
         val container = AppContainer.instance
 
-        return runCatching {
-            when (inputData.getString(KEY_TASK_TYPE)) {
-                TASK_TYPE_PHOTO_ESTIMATE -> processPhotoEstimate(container)
-                TASK_TYPE_CHAT_REPLY -> processChatReply(container)
-                else -> Result.failure()
+        return try {
+            runCatching {
+                when (inputData.getString(KEY_TASK_TYPE)) {
+                    TASK_TYPE_PHOTO_ESTIMATE -> processPhotoEstimate(container)
+                    TASK_TYPE_CHAT_REPLY -> processChatReply(container)
+                    else -> Result.failure()
+                }
+            }.getOrElse { throwable ->
+                if (shouldRetryAfterFailure(throwable)) {
+                    Result.retry()
+                } else {
+                    Log.e(TAG, "Persistent engine worker failed", throwable)
+                    Result.failure()
+                }
             }
-        }.getOrElse { throwable ->
-            if (shouldRetryAfterFailure(throwable)) {
-                Result.retry()
-            } else {
-                Log.e(TAG, "Persistent engine worker failed", throwable)
-                Result.failure()
-            }
+        } finally {
+            HomeStatusWidgetUpdater.requestRefresh(applicationContext)
         }
     }
 

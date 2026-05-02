@@ -115,6 +115,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntentActions(intent: Intent?, fromNewIntent: Boolean) {
+        if (intent?.action == AppLaunchActions.ACTION_OPEN_CAMERA_FROM_WIDGET) {
+            AppContainer.instance.appLaunchCoordinator.requestCameraLaunch()
+            Log.i(TAG, "Received widget camera launch request fromNewIntent=$fromNewIntent")
+        }
         if (intent?.getBooleanExtra(EXTRA_RETRIGGER_RECENT_MODEL_UPLOADS, false) != true) {
             return
         }

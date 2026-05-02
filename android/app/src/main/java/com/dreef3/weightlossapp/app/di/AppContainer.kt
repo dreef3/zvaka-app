@@ -1,6 +1,7 @@
 package com.dreef3.weightlossapp.app.di
 
 import android.content.Context
+import com.dreef3.weightlossapp.app.AppLaunchCoordinator
 import com.dreef3.weightlossapp.app.health.HealthConnectCaloriesExporter
 import com.dreef3.weightlossapp.app.health.HealthConnectBackfillService
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
@@ -21,6 +22,8 @@ import com.dreef3.weightlossapp.app.sync.AppDataBackupManager
 import com.dreef3.weightlossapp.app.sync.DriveSyncScheduler
 import com.dreef3.weightlossapp.app.sync.GoogleDriveSyncManager
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
+import com.dreef3.weightlossapp.app.widget.HomeStatusWidgetRefreshTrigger
+import com.dreef3.weightlossapp.app.widget.WidgetRefreshTrigger
 import com.dreef3.weightlossapp.data.local.AppDatabase
 import com.dreef3.weightlossapp.data.preferences.AppPreferences
 import com.dreef3.weightlossapp.data.repository.CoachChatRepositoryImpl
@@ -48,8 +51,10 @@ import com.dreef3.weightlossapp.work.WorkManagerEngineTaskQueue
 class AppContainer private constructor(context: Context) {
     val appContext: Context = context
     val database = AppDatabase.build(context)
+    val appLaunchCoordinator = AppLaunchCoordinator()
     val driveSyncScheduler = DriveSyncScheduler(context)
     val preferences = AppPreferences(context, driveSyncScheduler)
+    val widgetRefreshTrigger: WidgetRefreshTrigger = HomeStatusWidgetRefreshTrigger(context)
     val healthConnectCaloriesExporter = HealthConnectCaloriesExporter(context)
     val localDateProvider = LocalDateProvider()
     val photoStorage = PhotoStorage(context)
@@ -57,6 +62,7 @@ class AppContainer private constructor(context: Context) {
     val foodEntryRepository: FoodEntryRepository = FoodEntryRepositoryImpl(
         foodEntryDao = database.foodEntryDao(),
         driveSyncTrigger = driveSyncScheduler,
+        widgetRefreshTrigger = widgetRefreshTrigger,
         preferences = preferences,
         healthConnectCaloriesExporter = healthConnectCaloriesExporter,
     )
@@ -82,6 +88,7 @@ class AppContainer private constructor(context: Context) {
         profileDao = database.profileDao(),
         budgetDao = database.dailyCalorieBudgetPeriodDao(),
         driveSyncTrigger = driveSyncScheduler,
+        widgetRefreshTrigger = widgetRefreshTrigger,
     )
 
     val coachChatRepository: CoachChatRepository = CoachChatRepositoryImpl(
