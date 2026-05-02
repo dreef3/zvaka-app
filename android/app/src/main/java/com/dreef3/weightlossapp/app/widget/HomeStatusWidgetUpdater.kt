@@ -104,11 +104,10 @@ object HomeStatusWidgetUpdater {
     }
 
     private fun cameraPendingIntent(context: Context): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            action = AppLaunchActions.ACTION_OPEN_CAMERA_FROM_WIDGET
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val intent = Intent(context, HomeStatusWidgetProvider::class.java).apply {
+            action = HomeStatusWidgetProvider.ACTION_OPEN_CAMERA
         }
-        return PendingIntent.getActivity(
+        return PendingIntent.getBroadcast(
             context,
             1001,
             intent,
@@ -117,12 +116,10 @@ object HomeStatusWidgetUpdater {
     }
 
     private fun openAppPendingIntent(context: Context): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            action = Intent.ACTION_MAIN
-            addCategory(Intent.CATEGORY_LAUNCHER)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val intent = Intent(context, HomeStatusWidgetProvider::class.java).apply {
+            action = HomeStatusWidgetProvider.ACTION_OPEN_APP
         }
-        return PendingIntent.getActivity(
+        return PendingIntent.getBroadcast(
             context,
             1002,
             intent,
