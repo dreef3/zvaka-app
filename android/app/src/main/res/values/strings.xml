@@ -2,10 +2,10 @@
     <string name="app_name">Žvaka</string>
     <string name="widget_home_label">Quick Log</string>
     <string name="widget_open_camera">Open camera</string>
-    <string name="widget_remaining_label">kcal left</string>
-    <string name="widget_over_label">kcal over</string>
+    <string name="widget_remaining_label">left</string>
+    <string name="widget_over_label">over</string>
     <string name="widget_setup_primary">Open</string>
-    <string name="widget_setup_secondary">Finish setup</string>
-    <string name="widget_background_item_singular">%1$d background item</string>
-    <string name="widget_background_item_plural">%1$d background items</string>
+    <string name="widget_setup_secondary">setup</string>
+    <string name="widget_background_item_singular">%1$d in bg</string>
+    <string name="widget_background_item_plural">%1$d in bg</string>
 </resources>
