@@ -43,10 +43,11 @@ object HomeStatusWidgetUpdater {
         val today = container.localDateProvider.today()
         val budget = container.profileRepository.findBudgetFor(today)?.caloriesPerDay
         val entries = container.foodEntryRepository.getEntriesInRange(today, today)
-        val activeQueueCount = WorkManager.getInstance(context)
-            .getWorkInfosForUniqueWork(WorkManagerEngineTaskQueue.UNIQUE_WORK_NAME)
-            .get()
-            .count { it.state in ACTIVE_STATES }
+        val workManager = WorkManager.getInstance(context)
+        val activeQueueCount = (
+            workManager.getWorkInfosForUniqueWork(WorkManagerEngineTaskQueue.UNIQUE_PHOTO_WORK_NAME).get() +
+                workManager.getWorkInfosForUniqueWork(WorkManagerEngineTaskQueue.UNIQUE_CHAT_WORK_NAME).get()
+            ).count { it.state in ACTIVE_STATES }
         val processingCount = entries.count { it.deletedAt == null && it.entryStatus == FoodEntryStatus.Processing }
         val backgroundCount = maxOf(processingCount, activeQueueCount)
 
