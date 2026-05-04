@@ -17,6 +17,9 @@ import com.dreef3.weightlossapp.app.sync.UserPreferenceBackupSnapshot
 import com.dreef3.weightlossapp.chat.CoachModel
 import com.dreef3.weightlossapp.inference.CalorieEstimationModel
 import java.io.IOException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -26,8 +29,10 @@ class AppPreferences(
     private val context: Context,
     private val driveSyncTrigger: DriveSyncTrigger = NoOpDriveSyncTrigger,
     dataStoreName: String = DEFAULT_DATA_STORE_NAME,
+    scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
 ) {
     private val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+        scope = scope,
         produceFile = { context.preferencesDataStoreFile(dataStoreName) },
     )
 

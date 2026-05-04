@@ -25,6 +25,7 @@ import com.dreef3.weightlossapp.inference.FoodEstimationRequest
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 
 class PersistentEngineTaskWorker(
     appContext: Context,
@@ -67,14 +68,16 @@ class PersistentEngineTaskWorker(
         val userVisibleText = inputData.getString(KEY_USER_VISIBLE_TEXT)
         val preferredDescription = inputData.getString(KEY_PREFERRED_DESCRIPTION)?.trim()?.ifBlank { null }
 
-        val estimationResult = container.foodEstimationEngine.estimate(
-            FoodEstimationRequest(
-                imagePath = imagePath,
-                capturedAtEpochMs = capturedAtEpochMs,
-                userContext = userVisibleText?.takeIf { it.isNotBlank() },
-                preferredDescription = preferredDescription,
-            ),
-        )
+        val estimationResult = container.liteRtMutex.withLock {
+            container.foodEstimationEngine.estimate(
+                FoodEstimationRequest(
+                    imagePath = imagePath,
+                    capturedAtEpochMs = capturedAtEpochMs,
+                    userContext = userVisibleText?.takeIf { it.isNotBlank() },
+                    preferredDescription = preferredDescription,
+                ),
+            )
+        }
         estimationResult.exceptionOrNull()?.let { throwable ->
             if (!shouldRetryAfterFailure(throwable)) {
                 recordWorkerException(
@@ -173,18 +176,21 @@ class PersistentEngineTaskWorker(
 
         val history = container.coachChatRepository.getMessages(sessionId)
             .filter { it.id <= triggerMessageId }
-        val response = runCatching {
-            container.dietChatEngine.sendMessage(
-                message = actualPrompt,
-                history = history,
-                snapshot = buildSnapshot(container),
-            ).getOrElse {
-                Log.e(TAG, "dietChatEngine returned failure", it)
-                "I couldn't answer that yet. Try again in a moment."
+        val snapshot = buildSnapshot(container)
+        val response = container.liteRtMutex.withLock {
+            runCatching {
+                container.dietChatEngine.sendMessage(
+                    message = actualPrompt,
+                    history = history,
+                    snapshot = snapshot,
+                ).getOrElse {
+                    Log.e(TAG, "dietChatEngine returned failure", it)
+                    "I couldn't answer that yet. Try again in a moment."
+                }
+            }.getOrElse { throwable ->
+                Log.e(TAG, "Queued chat reply failed", throwable)
+                "I hit an internal error while answering. Please try again."
             }
-        }.getOrElse { throwable ->
-            Log.e(TAG, "Queued chat reply failed", throwable)
-            "I hit an internal error while answering. Please try again."
         }
 
         appendAssistantReply(container, sessionId, userVisibleText, response)

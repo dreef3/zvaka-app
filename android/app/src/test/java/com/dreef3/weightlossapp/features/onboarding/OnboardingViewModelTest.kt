@@ -17,7 +17,10 @@ import com.dreef3.weightlossapp.domain.model.Sex
 import com.dreef3.weightlossapp.domain.model.UserProfile
 import com.dreef3.weightlossapp.domain.repository.ProfileRepository
 import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileUseCase
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.dropWhile
@@ -46,6 +49,7 @@ import java.time.ZoneId
 @RunWith(RobolectricTestRunner::class)
 class OnboardingViewModelTest {
     private val dispatcher = StandardTestDispatcher()
+    private val prefsScope = CoroutineScope(dispatcher + SupervisorJob())
 
     @Before
     fun setUp() {
@@ -54,6 +58,7 @@ class OnboardingViewModelTest {
 
     @After
     fun tearDown() {
+        prefsScope.cancel()
         kotlinx.coroutines.Dispatchers.resetMain()
     }
 
@@ -241,6 +246,7 @@ class OnboardingViewModelTest {
     private fun testPreferences(): AppPreferences = AppPreferences(
         context = ApplicationProvider.getApplicationContext(),
         dataStoreName = "test-onboarding-prefs-${System.nanoTime()}",
+        scope = prefsScope,
     )
 }
 
