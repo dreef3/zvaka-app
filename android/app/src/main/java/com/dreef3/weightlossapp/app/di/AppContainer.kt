@@ -36,6 +36,7 @@ import com.dreef3.weightlossapp.domain.usecase.BackgroundPhotoCaptureUseCase
 import com.dreef3.weightlossapp.domain.usecase.ConfirmFoodEstimateUseCase
 import com.dreef3.weightlossapp.domain.usecase.EngineTaskQueue
 import com.dreef3.weightlossapp.domain.usecase.SaveManualCaloriesUseCase
+import kotlinx.coroutines.sync.Mutex
 import com.dreef3.weightlossapp.domain.usecase.SaveUserProfileUseCase
 import com.dreef3.weightlossapp.domain.usecase.UpdateFoodEntryUseCase
 import com.dreef3.weightlossapp.inference.CalorieEstimationModel
@@ -71,6 +72,7 @@ class AppContainer private constructor(context: Context) {
     val appDataBackupManager = AppDataBackupManager(context, database, preferences)
     val googleDriveSyncManager = GoogleDriveSyncManager(context, preferences, appDataBackupManager)
     val networkConnectionMonitor = NetworkConnectionMonitor(context)
+    val liteRtMutex = Mutex()
     val engineTaskQueue: EngineTaskQueue = WorkManagerEngineTaskQueue(context)
     val budgetCalculator = CalorieBudgetCalculator()
     val summaryAggregator = SummaryAggregator()

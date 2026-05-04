@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import com.dreef3.weightlossapp.domain.usecase.EngineQueueState
 import com.dreef3.weightlossapp.domain.usecase.EngineTaskQueue
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 class WorkManagerEngineTaskQueue(
@@ -26,6 +27,7 @@ class WorkManagerEngineTaskQueue(
         preferredDescription: String?,
     ) {
         enqueue(
+            uniqueWorkName = UNIQUE_PHOTO_WORK_NAME,
             inputData = Data.Builder()
                 .putString(PersistentEngineTaskWorker.KEY_TASK_TYPE, PersistentEngineTaskWorker.TASK_TYPE_PHOTO_ESTIMATE)
                 .putLong(PersistentEngineTaskWorker.KEY_ENTRY_ID, entryId)
@@ -51,6 +53,7 @@ class WorkManagerEngineTaskQueue(
         actualPrompt: String,
     ) {
         enqueue(
+            uniqueWorkName = UNIQUE_CHAT_WORK_NAME,
             inputData = Data.Builder()
                 .putString(PersistentEngineTaskWorker.KEY_TASK_TYPE, PersistentEngineTaskWorker.TASK_TYPE_CHAT_REPLY)
                 .putLong(PersistentEngineTaskWorker.KEY_SESSION_ID, sessionId)
@@ -67,20 +70,22 @@ class WorkManagerEngineTaskQueue(
     }
 
     override fun observeState(sessionId: Long?): Flow<EngineQueueState> =
-        workManager.getWorkInfosForUniqueWorkFlow(UNIQUE_WORK_NAME)
-            .map { infos ->
-                val activeInfos = infos.filter { info -> info.state in ACTIVE_STATES }
-                EngineQueueState(
-                    totalPendingCount = activeInfos.size,
-                    photoPendingCount = activeInfos.count { TAG_PHOTO_ESTIMATE in it.tags },
-                    chatPendingCount = activeInfos.count { TAG_CHAT_REPLY in it.tags },
-                    sessionPendingCount = sessionId?.let { id ->
-                        activeInfos.count { sessionTag(id) in it.tags }
-                    } ?: 0,
-                )
-            }
+        combine(
+            workManager.getWorkInfosForUniqueWorkFlow(UNIQUE_PHOTO_WORK_NAME),
+            workManager.getWorkInfosForUniqueWorkFlow(UNIQUE_CHAT_WORK_NAME),
+        ) { photoInfos, chatInfos ->
+            val activeInfos = (photoInfos + chatInfos).filter { it.state in ACTIVE_STATES }
+            EngineQueueState(
+                totalPendingCount = activeInfos.size,
+                photoPendingCount = activeInfos.count { TAG_PHOTO_ESTIMATE in it.tags },
+                chatPendingCount = activeInfos.count { TAG_CHAT_REPLY in it.tags },
+                sessionPendingCount = sessionId?.let { id ->
+                    activeInfos.count { sessionTag(id) in it.tags }
+                } ?: 0,
+            )
+        }
 
-    private fun enqueue(inputData: Data, tags: Set<String>) {
+    private fun enqueue(uniqueWorkName: String, inputData: Data, tags: Set<String>) {
         val request = OneTimeWorkRequestBuilder<PersistentEngineTaskWorker>()
             .setInputData(inputData)
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
@@ -90,14 +95,15 @@ class WorkManagerEngineTaskQueue(
             .build()
 
         workManager.enqueueUniqueWork(
-            UNIQUE_WORK_NAME,
+            uniqueWorkName,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
             request,
         )
     }
 
     private companion object {
-        private const val UNIQUE_WORK_NAME = "persistent-engine-task-queue"
+        private const val UNIQUE_PHOTO_WORK_NAME = "engine-photo-queue"
+        private const val UNIQUE_CHAT_WORK_NAME = "engine-chat-queue"
         private const val TAG_ENGINE_QUEUE = "engine-queue"
         private const val TAG_PHOTO_ESTIMATE = "engine-photo-estimate"
         private const val TAG_CHAT_REPLY = "engine-chat-reply"

@@ -1,7 +1,6 @@
 package com.dreef3.weightlossapp.chat
 
 import android.util.Log
-import com.dreef3.weightlossapp.BuildConfig
 import com.google.ai.edge.litertlm.Tool
 import com.google.ai.edge.litertlm.ToolParam
 import com.google.ai.edge.litertlm.ToolSet
@@ -78,14 +77,19 @@ class DietEntryTools(
         @ToolParam(description = "Corrected short food description. Use empty string if description is not being changed.") correctedDescription: String,
         @ToolParam(description = "Short reason based on the user's correction.") reason: String,
     ): Map<String, Any?> = runBlocking {
-        correctionService.applyCorrection(
-            DietEntryCorrectionRequest(
-                entryId = entryId.toLong(),
-                correctedCalories = correctedCalories.takeIf { it >= 0 },
-                correctedDescription = correctedDescription.takeIf { it.isNotBlank() },
-                reason = reason,
-            ),
-        )
+        runCatching {
+            correctionService.applyCorrection(
+                DietEntryCorrectionRequest(
+                    entryId = entryId.toLong(),
+                    correctedCalories = correctedCalories.takeIf { it >= 0 },
+                    correctedDescription = correctedDescription.takeIf { it.isNotBlank() },
+                    reason = reason,
+                ),
+            )
+        }.getOrElse { throwable ->
+            Log.e(TAG, "correctEntry failed entryId=$entryId", throwable)
+            mapOf("success" to false, "message" to "Failed to correct entry: ${throwable.message}")
+        }
     }
 
     @Tool(
@@ -94,7 +98,12 @@ class DietEntryTools(
     fun inspectEntry(
         @ToolParam(description = "The exact entryId of the saved food entry to inspect.") entryId: Int,
     ): Map<String, Any?> = runBlocking {
-        inspectionService.inspectEntry(entryId.toLong())
+        runCatching {
+            inspectionService.inspectEntry(entryId.toLong())
+        }.getOrElse { throwable ->
+            Log.e(TAG, "inspectEntry failed entryId=$entryId", throwable)
+            mapOf("success" to false, "message" to "Failed to inspect entry: ${throwable.message}")
+        }
     }
 
     @Tool(
@@ -105,11 +114,16 @@ class DietEntryTools(
         @ToolParam(description = "Updated meal description to use as context for the re-estimate. Use empty string if unchanged.") correctedDescription: String,
         @ToolParam(description = "Short reason or user request that explains the re-estimate.") reason: String,
     ): Map<String, Any?> = runBlocking {
-        inspectionService.reestimateEntry(
-            entryId = entryId.toLong(),
-            correctedDescription = correctedDescription.takeIf { it.isNotBlank() },
-            reason = reason,
-        )
+        runCatching {
+            inspectionService.reestimateEntry(
+                entryId = entryId.toLong(),
+                correctedDescription = correctedDescription.takeIf { it.isNotBlank() },
+                reason = reason,
+            )
+        }.getOrElse { throwable ->
+            Log.e(TAG, "reestimateEntry failed entryId=$entryId", throwable)
+            mapOf("success" to false, "message" to "Failed to re-estimate entry: ${throwable.message}")
+        }
     }
 
     @Tool(
@@ -121,17 +135,20 @@ class DietEntryTools(
         @ToolParam(description = "Entry date in ISO format yyyy-MM-dd. Use empty string for today.") dateIso: String,
         @ToolParam(description = "Short note explaining that this was added from chat. Do not ask the user for this.") reason: String,
     ): Map<String, Any?> = runBlocking {
-        if (BuildConfig.DEBUG) {
-            Log.d(TAG, "logFoodEntry mealName=$mealName calories=$calories dateIso=$dateIso")
+        Log.i(TAG, "logFoodEntry mealName=$mealName calories=$calories dateIso=$dateIso")
+        runCatching {
+            correctionService.logEntry(
+                DietEntryLogRequest(
+                    description = mealName,
+                    calories = calories,
+                    dateIso = dateIso.takeIf { it.isNotBlank() },
+                    reason = reason,
+                ),
+            )
+        }.getOrElse { throwable ->
+            Log.e(TAG, "logFoodEntry failed", throwable)
+            mapOf("success" to false, "message" to "Failed to log entry: ${throwable.message}")
         }
-        correctionService.logEntry(
-            DietEntryLogRequest(
-                description = mealName,
-                calories = calories,
-                dateIso = dateIso.takeIf { it.isNotBlank() },
-                reason = reason,
-            ),
-        )
     }
 
     companion object {
@@ -171,9 +188,7 @@ class DietEntryTools(
 
     @Tool(description = "Alias for logFoodEntry (snake_case)")
     fun log_food_entry(meal_name: String, calories: Int, date_iso: String, reason: String): Map<String, Any?> {
-        if (BuildConfig.DEBUG) {
-            Log.d(TAG, "log_food_entry alias invoked mealName=$meal_name calories=$calories dateIso=$date_iso")
-        }
+        Log.i(TAG, "log_food_entry alias mealName=$meal_name calories=$calories dateIso=$date_iso")
         return logFoodEntry(mealName = meal_name, calories = calories, dateIso = date_iso, reason = reason)
     }
 }
