@@ -6,6 +6,4 @@
     <string name="widget_over_label">over</string>
     <string name="widget_setup_primary">Open</string>
     <string name="widget_setup_secondary">setup</string>
-    <string name="widget_background_item_singular">%1$d in bg</string>
-    <string name="widget_background_item_plural">%1$d in bg</string>
 </resources>

@@ -54,7 +54,7 @@ object HomeStatusWidgetUpdater {
             WidgetState(
                 primaryText = context.getString(R.string.widget_setup_primary),
                 secondaryText = context.getString(R.string.widget_setup_secondary),
-                backgroundText = null,
+                hasBackgroundWork = backgroundCount > 0,
             )
         } else {
             val summary = container.summaryAggregator.buildSummary(today, budget, entries)
@@ -66,16 +66,7 @@ object HomeStatusWidgetUpdater {
                 } else {
                     context.getString(R.string.widget_over_label)
                 },
-                backgroundText = if (backgroundCount > 0) {
-                    countLabel(
-                        context = context,
-                        count = backgroundCount,
-                        singularRes = R.string.widget_background_item_singular,
-                        pluralRes = R.string.widget_background_item_plural,
-                    )
-                } else {
-                    null
-                },
+                hasBackgroundWork = backgroundCount > 0,
             )
         }
 
@@ -93,12 +84,10 @@ object HomeStatusWidgetUpdater {
     ): RemoteViews = RemoteViews(context.packageName, R.layout.widget_home_status).apply {
         setTextViewText(R.id.widget_primary_text, state.primaryText)
         setTextViewText(R.id.widget_secondary_text, state.secondaryText)
-        if (state.backgroundText == null) {
-            setViewVisibility(R.id.widget_background_text, View.GONE)
-        } else {
-            setViewVisibility(R.id.widget_background_text, View.VISIBLE)
-            setTextViewText(R.id.widget_background_text, state.backgroundText)
-        }
+        setViewVisibility(
+            R.id.widget_processing_indicator,
+            if (state.hasBackgroundWork) View.VISIBLE else View.GONE,
+        )
         setOnClickPendingIntent(R.id.widget_camera_button, cameraPendingIntent(context))
         setOnClickPendingIntent(R.id.widget_status_button, openAppPendingIntent(context))
     }
@@ -131,21 +120,10 @@ object HomeStatusWidgetUpdater {
         )
     }
 
-    private fun countLabel(
-        context: Context,
-        count: Int,
-        singularRes: Int,
-        pluralRes: Int,
-    ): String = if (count == 1) {
-        context.getString(singularRes, count)
-    } else {
-        context.getString(pluralRes, count)
-    }
-
     private data class WidgetState(
         val primaryText: String,
         val secondaryText: String,
-        val backgroundText: String?,
+        val hasBackgroundWork: Boolean,
     )
 
     private val ACTIVE_STATES = setOf(
