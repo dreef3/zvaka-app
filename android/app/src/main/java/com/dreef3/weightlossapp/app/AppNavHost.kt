@@ -80,6 +80,9 @@ fun AppNavHost(
 ) {
     val navController = rememberNavController()
     val state by appStateViewModel.state.collectAsStateWithLifecycle()
+    val container = AppContainer.instance
+    val pendingCameraLaunchRequestId by container.appLaunchCoordinator.pendingCameraLaunchRequestId
+        .collectAsStateWithLifecycle(initialValue = null)
 
     if (!state.isReady) {
         CircularProgressIndicator()
@@ -97,6 +100,15 @@ fun AppNavHost(
             popUpTo(navController.graph.findStartDestination().id) {
                 saveState = true
             }
+        }
+    }
+
+    LaunchedEffect(pendingCameraLaunchRequestId, state.isSetupComplete, currentDestination?.route) {
+        if (pendingCameraLaunchRequestId != null &&
+            state.isSetupComplete &&
+            currentDestination?.route != AppDestinations.Home
+        ) {
+            navigateToTopLevel(AppDestinations.Home)
         }
     }
 
@@ -124,7 +136,7 @@ fun AppNavHost(
         ) {
             composable(AppDestinations.Onboarding) {
                 OnboardingScreenRoute(
-                    container = AppContainer.instance,
+                    container = container,
                     onCompleted = {
                         navController.navigate(AppDestinations.Home) {
                             popUpTo(AppDestinations.Onboarding) { inclusive = true }
@@ -134,7 +146,7 @@ fun AppNavHost(
             }
             composable(AppDestinations.Home) {
                 TodaySummaryScreenRoute(
-                    container = AppContainer.instance,
+                    container = container,
                     onNavigateToTrends = { navigateToTopLevel(AppDestinations.Trends) },
                     onOpenHistoricalChat = { sessionId ->
                         navController.navigate(AppDestinations.historicalChat(sessionId))
@@ -146,7 +158,7 @@ fun AppNavHost(
             }
             composable(AppDestinations.Trends) {
                 TrendsScreenRoute(
-                    container = AppContainer.instance,
+                    container = container,
                     onOpenHistoricalChat = { sessionId ->
                         navController.navigate(AppDestinations.historicalChat(sessionId))
                     },
@@ -158,7 +170,6 @@ fun AppNavHost(
             composable(AppDestinations.Chat) {
                 val context = LocalContext.current
                 val activity = context as? Activity
-                val container = AppContainer.instance
                 val coachModel by container.preferences.coachModel.collectAsStateWithLifecycle(initialValue = CoachModel.Gemma)
                 val coachDescriptor = coachModel.requiredModelDescriptor()
                 val downloadState by container.modelDownloadRepository
@@ -202,7 +213,7 @@ fun AppNavHost(
             ) { backStack ->
                 val sessionId = backStack.arguments?.getLong("sessionId") ?: return@composable
                 CoachChatScreenRoute(
-                    container = AppContainer.instance,
+                    container = container,
                     sessionId = sessionId,
                     readOnly = true,
                 )
@@ -213,7 +224,7 @@ fun AppNavHost(
             ) { backStack ->
                 val entryId = backStack.arguments?.getLong("entryId") ?: return@composable
                 MealDebugScreenRoute(
-                    container = AppContainer.instance,
+                    container = container,
                     entryId = entryId,
                     onRetry = { navController.popBackStack() },
                     onBack = { navController.popBackStack() },
@@ -221,7 +232,7 @@ fun AppNavHost(
             }
             composable(AppDestinations.Profile) {
                 ProfileEditScreen(
-                    container = AppContainer.instance,
+                    container = container,
                     onBack = { navController.popBackStack() },
                     onResetToOnboarding = {
                         navController.navigate(AppDestinations.Onboarding) {

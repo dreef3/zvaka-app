@@ -5,6 +5,7 @@ import com.dreef3.weightlossapp.BuildConfig
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.app.media.ModelDescriptors
 import com.dreef3.weightlossapp.app.network.NetworkConnectionType
+import com.dreef3.weightlossapp.app.widget.HomeStatusWidgetUpdater
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
 import com.dreef3.weightlossapp.chat.requiredModelDescriptor
 import com.dreef3.weightlossapp.inference.requiredModelDescriptors
@@ -101,6 +102,7 @@ object AppInitializer {
             }
             if (staleEntries.isNotEmpty()) {
                 debugLog("Recovered ${staleEntries.size} stale processing photo entries")
+                HomeStatusWidgetUpdater.requestRefresh(container.appContext)
             }
         }
     }

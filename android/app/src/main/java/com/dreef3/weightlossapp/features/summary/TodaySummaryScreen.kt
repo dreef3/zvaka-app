@@ -69,6 +69,8 @@ fun TodaySummaryScreenRoute(
 ) {
     val viewModel: TodaySummaryViewModel = viewModel(factory = TodaySummaryViewModelFactory(container))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val pendingCameraLaunchRequestId by container.appLaunchCoordinator.pendingCameraLaunchRequestId
+        .collectAsStateWithLifecycle(initialValue = null)
     val context = LocalContext.current
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -95,28 +97,37 @@ fun TodaySummaryScreenRoute(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            val file = container.photoStorage.createPhotoFile()
-            pendingPhotoPath = file.absolutePath
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            takePictureLauncher.launch(uri)
+            launchCameraCapture(
+                context = context,
+                container = container,
+                takePictureLauncher = takePictureLauncher,
+                onPendingPath = { path -> pendingPhotoPath = path },
+            )
         }
+    }
+
+    LaunchedEffect(pendingCameraLaunchRequestId) {
+        val requestId = pendingCameraLaunchRequestId ?: return@LaunchedEffect
+        launchCameraCapture(
+            context = context,
+            container = container,
+            takePictureLauncher = takePictureLauncher,
+            onPendingPath = { path -> pendingPhotoPath = path },
+            onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+        )
+        container.appLaunchCoordinator.consumeCameraLaunchRequest(requestId)
     }
 
     TodaySummaryScreen(
         state = state,
         onTakePhoto = {
-            val permissionGranted = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.CAMERA,
-            ) == PackageManager.PERMISSION_GRANTED
-            if (permissionGranted) {
-                val file = container.photoStorage.createPhotoFile()
-                pendingPhotoPath = file.absolutePath
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                takePictureLauncher.launch(uri)
-            } else {
-                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-            }
+            launchCameraCapture(
+                context = context,
+                container = container,
+                takePictureLauncher = takePictureLauncher,
+                onPendingPath = { path -> pendingPhotoPath = path },
+                onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+            )
         },
         onOpenTrends = onNavigateToTrends,
         onOpenHistoricalChat = onOpenHistoricalChat,
@@ -134,6 +145,27 @@ fun TodaySummaryScreenRoute(
                 manualEntryTarget = null
             },
         )
+    }
+}
+
+private fun launchCameraCapture(
+    context: android.content.Context,
+    container: AppContainer,
+    takePictureLauncher: androidx.activity.result.ActivityResultLauncher<android.net.Uri>,
+    onPendingPath: (String) -> Unit,
+    onRequestPermission: (() -> Unit)? = null,
+) {
+    val permissionGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.CAMERA,
+    ) == PackageManager.PERMISSION_GRANTED
+    if (permissionGranted) {
+        val file = container.photoStorage.createPhotoFile()
+        onPendingPath(file.absolutePath)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        takePictureLauncher.launch(uri)
+    } else {
+        onRequestPermission?.invoke()
     }
 }
 
