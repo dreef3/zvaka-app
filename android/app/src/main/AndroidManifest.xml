@@ -76,6 +76,12 @@
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
 
+        <activity
+            android:name=".app.widget.WidgetCameraActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.WeightLossApp.WidgetCamera" />
+
         <receiver
             android:name=".app.widget.HomeStatusWidgetProvider"
             android:exported="true"

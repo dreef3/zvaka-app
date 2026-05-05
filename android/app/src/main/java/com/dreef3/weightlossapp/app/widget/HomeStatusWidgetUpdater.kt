@@ -10,7 +10,6 @@ import android.widget.RemoteViews
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.dreef3.weightlossapp.R
-import com.dreef3.weightlossapp.app.AppLaunchActions
 import com.dreef3.weightlossapp.app.MainActivity
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
@@ -105,11 +104,8 @@ object HomeStatusWidgetUpdater {
     }
 
     private fun cameraPendingIntent(context: Context): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            action = AppLaunchActions.ACTION_OPEN_CAMERA_FROM_WIDGET
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val intent = Intent(context, WidgetCameraActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
         return PendingIntent.getActivity(
             context,

@@ -1,14 +1,11 @@
 package com.dreef3.weightlossapp.app
 
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.dreef3.weightlossapp.BuildConfig
 import com.dreef3.weightlossapp.app.di.AppContainer
@@ -20,7 +17,6 @@ import com.google.android.play.core.appupdate.AppUpdateOptions
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.UpdateAvailability
 import java.time.Instant
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -36,35 +32,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private var widgetPendingPhotoPath: String? = null
-    private val widgetCameraLauncher = registerForActivityResult(
-        ActivityResultContracts.TakePicture(),
-    ) { saved ->
-        val path = widgetPendingPhotoPath ?: return@registerForActivityResult
-        widgetPendingPhotoPath = null
-        if (saved) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                AppContainer.instance.backgroundPhotoCaptureUseCase.enqueue(
-                    imagePath = path,
-                    capturedAt = Instant.now(),
-                )
-            }
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         shouldCheckForImmediateUpdate = savedInstanceState == null && isLauncherStart(intent)
         AppContainer.initialize(applicationContext)
         AppInitializer.initialize(AppContainer.instance)
-
-        val isWidgetCamera = savedInstanceState == null &&
-            intent?.action == AppLaunchActions.ACTION_OPEN_CAMERA_FROM_WIDGET
-        if (isWidgetCamera) {
-            handleWidgetCameraIntent()
-        }
-
-        handleModelUploadRetrigger(intent, fromNewIntent = false)
+        handleIntentActions(intent, fromNewIntent = false)
         appUpdateManager = AppUpdateManagerFactory.create(applicationContext)
         setContent {
             WeightLossAppTheme {
@@ -91,31 +64,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == AppLaunchActions.ACTION_OPEN_CAMERA_FROM_WIDGET) {
-            handleWidgetCameraIntent()
-        }
-        handleModelUploadRetrigger(intent, fromNewIntent = true)
-    }
-
-    private fun handleWidgetCameraIntent() {
-        Log.i(TAG, "Widget camera intent received")
-        if (hasCameraPermission()) {
-            startWidgetCameraCapture()
-        } else {
-            AppContainer.instance.appLaunchCoordinator.requestCameraLaunch()
-        }
-    }
-
-    private fun hasCameraPermission(): Boolean =
-        ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
-            PackageManager.PERMISSION_GRANTED
-
-    private fun startWidgetCameraCapture() {
-        val container = AppContainer.instance
-        val file = container.photoStorage.createPhotoFile()
-        widgetPendingPhotoPath = file.absolutePath
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        widgetCameraLauncher.launch(uri)
+        handleIntentActions(intent, fromNewIntent = true)
     }
 
     private fun checkForImmediateUpdate() {
@@ -165,7 +114,7 @@ class MainActivity : ComponentActivity() {
         return intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)
     }
 
-    private fun handleModelUploadRetrigger(intent: Intent?, fromNewIntent: Boolean) {
+    private fun handleIntentActions(intent: Intent?, fromNewIntent: Boolean) {
         if (intent?.getBooleanExtra(EXTRA_RETRIGGER_RECENT_MODEL_UPLOADS, false) != true) {
             return
         }
