@@ -6,6 +6,8 @@
     android:minWidth="50dp"
     android:minResizeHeight="40dp"
     android:minResizeWidth="50dp"
+    android:previewImage="@mipmap/ic_launcher"
+    android:previewLayout="@layout/widget_home_status"
     android:resizeMode="horizontal|vertical"
     android:targetCellHeight="1"
     android:targetCellWidth="1"
