@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- background -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#243236" />
+            <corners android:radius="20dp" />
+        </shape>
+    </item>
+
+    <!-- camera button area -->
+    <item
+        android:left="12dp"
+        android:top="12dp"
+        android:bottom="12dp"
+        android:right="0dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1A3A40" />
+            <corners android:radius="14dp" />
+            <size android:width="52dp" />
+        </shape>
+    </item>
+
+    <!-- camera icon -->
+    <item
+        android:left="24dp"
+        android:top="18dp"
+        android:bottom="18dp"
+        android:right="0dp">
+        <bitmap
+            android:src="@drawable/ic_widget_camera"
+            android:gravity="left|center_vertical" />
+    </item>
+
+    <!-- calorie number text placeholder -->
+    <item
+        android:left="80dp"
+        android:top="10dp"
+        android:right="16dp"
+        android:bottom="0dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#4DF8FAFA" />
+            <corners android:radius="3dp" />
+            <size android:height="18dp" android:width="60dp" />
+        </shape>
+    </item>
+
+    <!-- label text placeholder -->
+    <item
+        android:left="80dp"
+        android:top="34dp"
+        android:right="40dp"
+        android:bottom="0dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#33A0B8BB" />
+            <corners android:radius="3dp" />
+            <size android:height="8dp" android:width="36dp" />
+        </shape>
+    </item>
+
+</layer-list>
