@@ -44,7 +44,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="1840"
-                android:textColor="#F8FAFA"
+                android:textColor="#2C3435"
                 android:textSize="24sp"
                 android:textStyle="bold" />
 
@@ -54,7 +54,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="1dp"
                 android:text="kcal left"
-                android:textColor="#A0B8BB"
+                android:textColor="#596061"
                 android:textSize="11sp" />
         </LinearLayout>
 
@@ -67,7 +67,7 @@
         android:layout_height="14dp"
         android:layout_gravity="top|end"
         android:layout_margin="6dp"
-        android:indeterminateTint="#A0B8BB"
+        android:indeterminateTint="#596061"
         android:visibility="gone" />
 
 </FrameLayout>
