@@ -2,7 +2,6 @@
     <string name="app_name">Žvaka</string>
     <string name="widget_home_label">Quick Log</string>
     <string name="widget_open_camera">Open camera</string>
-    <string name="widget_log_label">Log</string>
     <string name="widget_remaining_label">left</string>
     <string name="widget_over_label">over</string>
     <string name="widget_setup_primary">Open</string>
