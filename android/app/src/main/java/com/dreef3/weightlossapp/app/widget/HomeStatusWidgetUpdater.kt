@@ -7,13 +7,10 @@ import android.content.Context
 import android.content.Intent
 import android.view.View
 import android.widget.RemoteViews
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
 import com.dreef3.weightlossapp.R
 import com.dreef3.weightlossapp.app.MainActivity
 import com.dreef3.weightlossapp.app.di.AppContainer
 import com.dreef3.weightlossapp.domain.model.FoodEntryStatus
-import com.dreef3.weightlossapp.work.WorkManagerEngineTaskQueue
 import java.text.NumberFormat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,13 +39,7 @@ object HomeStatusWidgetUpdater {
         val today = container.localDateProvider.today()
         val budget = container.profileRepository.findBudgetFor(today)?.caloriesPerDay
         val entries = container.foodEntryRepository.getEntriesInRange(today, today)
-        val workManager = WorkManager.getInstance(context)
-        val activeQueueCount = (
-            workManager.getWorkInfosForUniqueWork(WorkManagerEngineTaskQueue.UNIQUE_PHOTO_WORK_NAME).get() +
-                workManager.getWorkInfosForUniqueWork(WorkManagerEngineTaskQueue.UNIQUE_CHAT_WORK_NAME).get()
-            ).count { it.state in ACTIVE_STATES }
-        val processingCount = entries.count { it.deletedAt == null && it.entryStatus == FoodEntryStatus.Processing }
-        val backgroundCount = maxOf(processingCount, activeQueueCount)
+        val backgroundCount = entries.count { it.deletedAt == null && it.entryStatus == FoodEntryStatus.Processing }
 
         val widgetState = if (budget == null) {
             WidgetState(
@@ -126,9 +117,4 @@ object HomeStatusWidgetUpdater {
         val hasBackgroundWork: Boolean,
     )
 
-    private val ACTIVE_STATES = setOf(
-        WorkInfo.State.ENQUEUED,
-        WorkInfo.State.RUNNING,
-        WorkInfo.State.BLOCKED,
-    )
 }
