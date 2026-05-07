@@ -494,3 +494,107 @@ If we revisit this for MT6985 or another MediaTek SoC, the next questions are:
 3. Can the runtime patch be upstreamed or kept as a local integration layer?
 4. If local WSL remains unstable, prefer the GCP spot-VM workflow over repeated
    WSL retries.
+
+---
+
+## 2026-05-08: APUSys Unique Shared DRAM OOM (New Blocker)
+
+After resolving `NEURON_BAD_DATA` by switching to v8_0_10 SDK, the new failure
+mode is APUSys allocation failure.
+
+### What Changed
+
+- v8_0_8 SDK → `NEURON_BAD_DATA` (bytecode version mismatch)
+- v8_0_10 SDK → bytecode loads, but APUSys DLA OOM
+
+Confirmed on device with v8_0_10-compiled bundle (cache_128, prefill_128, original model):
+```
+apusys: memMapDeviceVa: map mem(N/0) fail(Out of memory)
+APUSys failed to allocate unique shared dram buffer: size=18890752, alignment=256
+Failed to create engine: INTERNAL: ERROR: [llm_litert_npu_compiled_model_executor.cc:2589]
+```
+
+### APUSys Pool
+
+The `mvpugzshmdata` reserved pool on this Xiaomi 13T Pro MIUI/HyperOS is **~16MB**.
+This is a DLA-specific zero-copy buffer between CPU and DLA hardware.
+
+### prefill_128 vs prefill_32 — Critical Distinction
+
+The DLA allocation depends on which `--prefill-lengths` was used during export:
+
+**`--prefill-lengths 128` (prefill_128 model):**
+- Allocation scales with `cache_length`: `cache_dim × 294,912 + 16384`
+- `cache_128` → 18,890,752 bytes (~18MB) — fails (2MB over)
+- `cache_64` → predicted ~9,453,568 bytes (~9.4MB) — fits ← **testing**
+- `cache_32` → predicted ~4,726,784 bytes (~4.5MB) — fits
+
+**`--prefill-lengths 32` (prefill_32 model):**
+- DLA ignores actual `cache_length` and allocates as if `cache_dim = 256`
+- Both `cache_64` AND `cache_256` → fixed 37,765,120 bytes (~37MB) — always fails
+- Root cause: DLA pre-allocates `sliding_window/2 = 256`-slot context buffer
+
+### All Measured Allocations
+
+| prefill | cache | DLA allocation | Fits 16MB? |
+|---------|-------|----------------|------------|
+| 128 | 128 | 18,890,752 (~18MB) | NO (2MB over) |
+| 32 | 64 | 37,765,120 (~37MB) | NO |
+| 32 | 256 | 37,765,120 (~37MB) | NO (same!) |
+| **128** | **64** | **~9,453,568 (~9.4MB)** | **YES (predicted)** |
+
+### JNI Signature Mismatch (resolved)
+
+The original `liblitertlm_jni.so` hardcodes `prefill_128`. When exports used
+`--prefill-lengths 32`, this caused a signature lookup failure before even reaching DLA.
+
+Fix applied (local, not upstream): patched 8 constants in
+`llm_litert_npu_compiled_model_executor.cc` from `_128`/`128` → `_32`/`32`.
+
+**Current state (2026-05-08):** reverted to original prefill_128 JNI (from git HEAD)
+to match the new `prefill_128` export in progress.
+
+The patch is documented in `docs/npu-investigation.md` if prefill_32 is needed again.
+
+### Current Export (Attempt 4 — in progress)
+
+```bash
+# On litert-export-spot VM (europe-west1-b)
+# Started: 2026-05-07 22:11 UTC, PID 42241
+python tools/build_mt6985_gemma3_litertlm.py \
+  --model google/gemma-4-e2b-it --model-family gemma4 \
+  --cache-length 64 --prefill-lengths 128 \
+  --output-dir /home/ae/src/litert-build/tmp/gemma4-mt6985-build-64-p128 \
+  --keep-intermediates
+
+# Monitor progress:
+gcloud compute ssh litert-export-spot --zone=europe-west1-b \
+  --command="tail -5 ~/src/litert-build/tmp/gemma4-mt6985-build-64-p128.log"
+```
+
+### Smoke Test Commands
+
+```bash
+# Push model (after scp from VM)
+adb -s 192.168.0.5:38047 push /tmp/model.litertlm /sdcard/Download/gemma-4-E2B-it.litertlm
+adb -s 192.168.0.5:38047 shell \
+  "cat /sdcard/Download/gemma-4-E2B-it.litertlm | \
+   run-as com.dreef3.weightlossapp.debug sh -c \
+   'cat > /data/user/0/com.dreef3.weightlossapp.debug/cache/models/gemma-4-E2B-it.litertlm'"
+
+# Run smoke test (app installed with prefill_128 JNI)
+adb -s 192.168.0.5:38047 shell am force-stop com.dreef3.weightlossapp.debug
+adb -s 192.168.0.5:38047 logcat -c
+adb -s 192.168.0.5:38047 shell am start \
+  -n com.dreef3.weightlossapp.debug/com.dreef3.weightlossapp.app.MainActivity \
+  --ez runCoachNpuSmokeTest true
+adb -s 192.168.0.5:38047 logcat | grep -E 'Coach|NPU|apusys|NeuroPilot|succeed|fail'
+```
+
+### If Attempt 4 Fails
+
+If allocation is still ~18MB (DLA floors at cache_128): try `--cache-length 32` with
+`--prefill-lengths 128` (predicted ~4.5MB).
+
+If allocation jumps back to 37MB: something changed about how prefill_128 is
+compiled; investigate `prefill_decode.tflite` signature names.
