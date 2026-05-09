@@ -196,6 +196,43 @@ These were investigated and are not the best current explanation anymore:
 - generic JNI loading failure
 - only the quantization recipe being wrong
 
+## Follow-Up Investigation (2026-05-09): APUSys Device-VA OOM
+
+After the retrospective above was written, the `NEURON_BAD_DATA` failure was resolved
+by rebuilding the JNI with matching prefill signatures and re-exporting the model with
+the corresponding prefill length. The compiled network now restores successfully, but
+a new failure was found: APUSys device-VA OOM at `CompiledModel::Create`.
+
+**Root cause**: NeuroPilot maps the transformer's DLA working buffer into a limited
+"unique shared DRAM" device-VA pool (`mem_flag=0x1`). On this MIUI/HyperOS MT6985
+firmware, the pool is approximately 16MB. The allocation needed by any tested Gemma 4
+E2B configuration exceeds this limit.
+
+**All 6 attempts, all failed:**
+
+| Attempt | prefill | cache | APUSys allocation | Result |
+|---------|---------|-------|-------------------|--------|
+| 1 | 128 | 128 | 18,890,752 (~18MB) | FAIL — closest (~3MB over) |
+| 2 | 32  | 64  | 37,765,120 (~36MB) | FAIL |
+| 3 | 32  | 256 | 37,765,120 (~36MB) | FAIL |
+| 4 | 128 | 64  | 37,765,120 (~36MB) | FAIL |
+| 5 | 64  | 64  | 37,765,120 (~36MB) | FAIL |
+| 6 | 256 | 256 | 41,680,896 (~40MB) | FAIL |
+
+No clean formula fits the data. `prefill=cache=128` gave the smallest allocation (18.9MB),
+still 3MB over the limit. Going to larger prefill increased the allocation rather than
+decreasing it. Investigation is at a decision point.
+
+Full kernel error chain:
+```
+E apusys  : memMapDeviceVa: map mem(N/0) fail(Out of memory)
+E apusys  : memAlloc: map device va fail(37765120/256/0/0x1)
+E apuware_hidl: mmap failed sharedFd=0, size=37765120: No such device
+E LiteRtDietChat: Failed to create engine: INTERNAL: ERROR: [llm_litert_npu_compiled_model_executor.cc:2589]
+```
+
+---
+
 ## Best Next NPU Experiment If Revisited
 
 Keep the preserved no-HLFB Gemma 4 export graph, but vary the MediaTek host SDK
