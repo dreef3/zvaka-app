@@ -94,18 +94,20 @@ if embedder_cpu is None:
     sys.exit(1)
 
 # Load litertlm_builder from the venv
-sys.path.insert(0, str(root))
-# The builder is in the ai_edge_litert package
-from ai_edge_litert.litertlm import builder as litertlm_builder
+from ai_edge_litert.internal import litertlm_builder
 
 b = litertlm_builder.LitertLmFileBuilder()
-b.add_system_metadata(
-    litertlm_builder.Metadata(
-        key="Authors",
-        value="ODML",
-        dtype=litertlm_builder.DType.STRING,
+# Note: Metadata/DType may or may not be available depending on version
+try:
+    b.add_system_metadata(
+        litertlm_builder.Metadata(
+            key="Authors",
+            value="ODML",
+            dtype=litertlm_builder.DType.STRING,
+        )
     )
-)
+except AttributeError:
+    pass  # Older versions may not have Metadata class; skip it
 
 llm_metadata = export_dir / "llm_metadata.pb"
 tokenizer_json = export_dir / "tokenizer.json"
@@ -136,7 +138,8 @@ b.add_tflite_model(
 )
 
 # Auxiliary model (sampler, etc.) — CPU as before
-aux = compiled_dir / "aux.tflite"
+# aux is NOT DLA-compiled; it lives in export_work/auxiliary.tflite
+aux = export_dir / "auxiliary.tflite"
 if aux.exists():
     b.add_tflite_model(
         str(aux),
