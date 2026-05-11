@@ -517,26 +517,70 @@ Also create `tools/run_nightly_export_cache256_p256.sh` (copy of cache64_p64 var
 
 ---
 
+## Fix Attempt — Rebuild Dispatch With resolve_symbols_in_exec=false (v9, 2026-05-11)
+
+### Root Cause of SIGABRT (all of v7, v8)
+
+The LiteRT-LM `.bazelrc` (line 44) unconditionally sets `--define=resolve_symbols_in_exec=true`. This causes the `litert_dynamic_lib` Bazel macro to enable `-no_undefined` feature removal, allowing the dispatch plugin to be built with **UND (unresolved) symbols**:
+
+- `NeuronAdapterApi::Create` — left as UND import, expected from parent binary
+- `LiteRt*` functions — left as UND imports, expected from parent binary
+
+When `LiteRtDispatchInitialize` dlopen's the plugin with `RTLD_NOW | RTLD_LOCAL`, `RTLD_NOW` demands all symbols resolve immediately. `NeuronAdapterApi::Create` is NOT exported by `liblitertlm_jni.so` → dlopen fails → `LiteRtDispatchInitialize` returns error → `has_dispatch_runtime_=false` → `CreateDelegateKernelInterface()` calls `LITERT_FATAL` → SIGABRT at `+316`.
+
+**Crash chain:**
+```
+dlopen("libLiteRtDispatch_MediaTek.so", RTLD_NOW|RTLD_LOCAL) → FAIL (unresolved NeuronAdapterApi::Create)
+→ SharedLibrary::Load returns error
+→ LiteRtDispatchInitialize returns kLiteRtStatusErrorRuntimeFailure  
+→ InitializeDispatchApi() fails
+→ Initialize() sets has_dispatch_runtime_ = false
+→ CreateDelegateKernelInterface() hits LITERT_FATAL("No usable Dispatch runtime found")
+→ abort() → SIGABRT at DispatchDelegate::CreateDelegateKernelInterface()+316
+```
+
+### Fix
+
+Rebuild with `--define=resolve_symbols_in_exec=false`, which compiles `neuron_adapter_api.cc` directly into the dispatch plugin:
+
+```bash
+cd /home/ae/src/LiteRT-LM
+bazelisk build --config=android_arm64 \
+  --define=resolve_symbols_in_exec=false \
+  @litert//litert/vendors/mediatek/dispatch:dispatch_api_so
+```
+
+**Result (v9):** 611KB binary (vs 239KB for v7/v8 which lacked the neuron_adapter_api code).
+
+- No `NeuronAdapterApi::Create` as UND in `.dynsym` ✓
+- `libneuronusdk_adapter.mtk.so` string present (LoadSymbols compiled in) ✓
+- Remaining UND `LiteRt*@VERS_1.0` symbols resolved by `libLiteRt.so` already in jniLibs ✓
+
+### Deploy
+
+Binary copied to `.worktrees/npu-rebase/android/app/src/main/jniLibs/arm64-v8a/libLiteRtDispatch_MediaTek.so`.
+
 ## Current Status (2026-05-11)
 
-### Active: v7 dispatch library smoke test
+### Active: v9 dispatch library smoke test
 
-Debug APK with v7 `libLiteRtDispatch_MediaTek.so` (lazy-import + strides removed) is built and waiting.
+Debug APK with v9 `libLiteRtDispatch_MediaTek.so` (resolve_symbols_in_exec=false + lazy-import + strides removed) is ready. Device offline.
 
 When device reconnects:
 ```bash
-ADB="adb -s 100.104.183.118:5555"
-/home/ae/android-sdk/platform-tools/$ADB connect 100.104.183.118:5555
+ADB=/home/ae/android-sdk/platform-tools/adb
+$ADB connect 100.104.183.118:5555
 cd /home/ae/weight-loss-app/.worktrees/npu-rebase/android && ./gradlew installDebug
 
 PKG="com.dreef3.weightlossapp.debug"
 MAIN="$PKG/com.dreef3.weightlossapp.app.MainActivity"
-$ADB shell am start -n $MAIN --es setCoachModelStorageKey gemma3_mt6985
-$ADB shell am start -n $MAIN --ez runSelectedCoachSmokeTest true
-APP_PID=$($ADB shell pidof $PKG | tr -d '\r')
-$ADB logcat --pid=$APP_PID | grep -E "smoke test|failed|succeeded"
+$ADB -s 100.104.183.118:5555 shell am start -n $MAIN --es setCoachModelStorageKey gemma3_mt6985
+$ADB -s 100.104.183.118:5555 shell am start -n $MAIN --ez runSelectedCoachSmokeTest true
+APP_PID=$($ADB -s 100.104.183.118:5555 shell pidof $PKG | tr -d '\r')
+$ADB -s 100.104.183.118:5555 logcat --pid=$APP_PID | grep -E "smoke test|failed|succeeded|SIGABRT|Fatal"
 ```
 
 **Expected success**: `Selected coach smoke test succeeded [cold] in Xms: OK`  
-**If decode OOM persists**: APUSys imports are still not being released → lazy-import may not be applied to all partition `NeuronExecution` objects; check if any `AttachInput` call path bypasses the new implementation.  
+**If SIGABRT still occurs**: Check logcat for which UND symbol failed; verify `libLiteRt.so` version in jniLibs exports versioned symbols.  
+**If decode OOM persists**: APUSys lazy-import fix (v7) wasn't reached before; now it can be evaluated.  
 **If a different error appears**: Check logcat for the new failure mode.
