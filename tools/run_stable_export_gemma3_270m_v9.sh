@@ -33,8 +33,10 @@ export JAX_PLATFORMS=cpu
 export JAX_PLATFORM_NAME=cpu
 export CUDA_VISIBLE_DEVICES=
 export RESOURCE_CONSTANT_NUMEL_THRESHOLD=1
-# Use v9_0_3 SDK to produce V245303 DLA format (required by libneuronusdk_adapter.9.mtk.so)
-export MEDIATEK_SDK_LIB_SUBDIR=v9_0_3/host/lib
+# Try v9_0_2 first — v9_0_3 rejects INT32 biases from dynamic_wi4_afp32 recipe.
+# v9_0_2 is expected to produce V245303 DLA (compatible with libneuronusdk_adapter.9.mtk.so)
+# with less strict bias type validation.
+export MEDIATEK_SDK_LIB_SUBDIR=v9_0_2/host/lib
 
 cd "$ROOT"
 . "$VENV/bin/activate"
