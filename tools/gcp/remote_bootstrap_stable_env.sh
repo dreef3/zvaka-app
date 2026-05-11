@@ -35,6 +35,20 @@ uv pip install --python "$VENV/bin/python" \
 
 uv pip install --python "$VENV/bin/python" --no-deps -e "$TORCH_ROOT"
 
+# Install HuggingFace token for gated model access (read from env or .env.local)
+if [[ -z "${HF_TOKEN:-}" ]]; then
+  env_local="$HOME/src/litert-build/tools/.env.local"
+  if [[ -f "$env_local" ]]; then
+    HF_TOKEN=$(sed -nE 's/^HF_TOKEN=(.+)/\1/p' "$env_local" | head -1)
+  fi
+fi
+if [[ -n "${HF_TOKEN:-}" ]]; then
+  mkdir -p "$HOME/.cache/huggingface"
+  echo "$HF_TOKEN" > "$HOME/.cache/huggingface/token"
+  chmod 600 "$HOME/.cache/huggingface/token"
+  echo "HuggingFace token installed."
+fi
+
 "$VENV/bin/python" - <<'PY'
 import importlib.metadata as m
 for pkg in [

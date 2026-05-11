@@ -53,6 +53,16 @@ rsync -az --delete \
   "$LOCAL_LITERT_TORCH/" \
   "$REMOTE_USER@$REMOTE_IP:~/src/litert-torch/"
 
+# Sync .env.local (contains HF_TOKEN and other secrets) — never committed to git
+LOCAL_ENV_LOCAL=${LOCAL_ENV_LOCAL:-$(dirname "$LOCAL_WORKTREE")/.env.local}
+if [[ -f "$LOCAL_ENV_LOCAL" ]]; then
+  rsync -az \
+    -e "${RSYNC_SSH[*]}" \
+    "$LOCAL_ENV_LOCAL" \
+    "$REMOTE_USER@$REMOTE_IP:~/src/litert-build/tools/.env.local"
+  echo "Synced .env.local -> ~/src/litert-build/tools/.env.local"
+fi
+
 echo
 echo "Incrementally synced tools -> ~/src/litert-build/tools"
 echo "Incrementally synced litert-torch -> ~/src/litert-torch"

@@ -845,13 +845,14 @@ def main() -> int:
     prefill_lengths = _parse_prefill_lengths(args.prefill_lengths)
 
     _patch_external_rope_embedder(external_rope_module)
-    _patch_gemma4_split_cache(
-        export_lib,
-        cache_base_lib,
-        split_cache_cache,
-        split_cache_module,
-        external_rope_preprocess_model,
-    )
+    if args.model_family == "gemma4":
+        _patch_gemma4_split_cache(
+            export_lib,
+            cache_base_lib,
+            split_cache_cache,
+            split_cache_module,
+            external_rope_preprocess_model,
+        )
     if args.model_family == "gemma4":
         _maybe_disable_gemma4_rms_hlfb(normalization)
 
