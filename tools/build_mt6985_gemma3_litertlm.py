@@ -98,7 +98,9 @@ def _parse_prefill_lengths(value: str) -> list[int]:
 
 def _get_compile_quantization_recipe(label: str, model_family: str) -> str | None:
     if model_family != "gemma4":
-        return "dynamic_wi4_afp32"
+        # weight_only keeps biases as FP32; dynamic_wi4_afp32 produces INT32 biases
+        # which both v9_0_2 and v9_0_3 NeuroPilot SDKs reject at AOT compile time.
+        return "weight_only_wi4_afp32"
 
     recipe_map = {
         "prefill_decode": "weight_only_wi4_afp32",
