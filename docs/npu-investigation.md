@@ -377,11 +377,94 @@ To fix DLA inference, the CPU→DLA boundary needs contiguous tensors. Options:
 2. Find a LiteRT-LM engine config that forces a copy at submodel boundaries
 3. Compile the prefill model to include the embedding lookup internally (no separate embedder handoff)
 
+### Fix Attempt — Densified Embedder (v5, 2026-05-10)
+
+`tools/densify_embedder_output.py` inserts `ADD(embed_out, scalar_zero) → new_output` after each subgraph's final tensor, forcing XNNPack to materialise a fresh contiguous buffer.
+
+**v5 error: "Failed to load model from buffer" — NPU accelerator rejected non-DLA model**
+
+The v5 litertlm packaged the densified embedder with `backend_constraint="npu"`, but the densified model is XNNPack-only (not DLA-compiled). LiteRT's NPU auto-registration failed:
+```
+W litert: [auto_registration.cc:78] NPU accelerator could not be loaded and registered: kLiteRtStatusErrorInvalidArgument.
+...
+Failed to create engine: INVALID_ARGUMENT: ERROR: [llm_litert_npu_compiled_model_executor.cc:2881]
+└ Failed to load model from buffer
+```
+
+### Fix Attempt — Densified CPU Embedder (v6, 2026-05-10)
+
+Rebuilt v6 with `backend_constraint="cpu"` for the densified embedder. Same "Failed to load model from buffer" error persisted.
+
+**v6 bug 1: Missing TFL3 file identifier**
+
+`flatbuffers.Builder.Finish()` on this version (25.12.19) does not write the 4-byte TFLite identifier "TFL3" at bytes 4-7. TFLite validates this identifier at load time. Fix: manually increment root_offset by 4 and prepend `b'TFL3'`.
+
+**v6 bug 2: External buffer data stripped**
+
+The original `embedder_weight_only_wi4_afp32.tflite` is **90 MB** — the 80 MB embedding matrix is stored as an external buffer (TFLite extended format: `Buffer.offset=6297104, Buffer.size=83886080`). The `InitFromPackedBuf` + `Pack` roundtrip only wrote the 6.3 MB flatbuffer header, omitting the weight data. Result: "Constant buffer 4 specified an out of range offset."
+
+Fix: inline external buffers before re-serializing (`buf.data = list(file_bytes[offset:offset+size])`). Output is now 90.2 MB and validates with the TFLite Python interpreter.
+
+**Fixed v6 (2026-05-10):** deployed 241 MB litertlm (139 MB DLA prefill_decode + 90 MB densified CPU embedder + 70 KB aux). Smoke test: **FAIL — same `dispatch_api.cc:271` strides error as v3**.
+
+```
+E/litert: [dispatch_api.cc:271] Failed to register tensor buffer: Tensor strides are not supported
+```
+
+**v6 conclusion**: `ADD(embed_out, scalar_zero)` does not produce a contiguous output. Probable cause: XNNPack detects `ADD(x, 0)` as a no-op and aliases the ADD output tensor directly to the strided embedding lookup output — no materialisation occurs. The DLA dispatch API still receives the strided memory reference at the `embeddings` tensor boundary.
+
+### Fix Attempt — Strides Removal via Binary Patch (2026-05-10)
+
+After v6 confirmed model-level densification cannot bypass the strides rejection, the fix moved to the dispatch library directly.
+
+**Root cause in dispatch library**: `litert_dispatch_device_context.cc:RegisterTensorBuffer` had an explicit check:
+```cpp
+if (tensor_type.layout.has_strides) {
+  return Error(..., "Tensor strides are not supported");
+}
+```
+This rejects any tensor with a non-contiguous layout — including the strided GATHER output at the CPU→DLA boundary.
+
+**Fix**: Binary-patched the `libLiteRtDispatch_MediaTek.so` in the worktree's jniLibs to NOP the strides rejection branch. App reinstalled with patched library.
+
+**Result after strides NOP**: New failure — APUSys DRAM OOM at decode warmup:
+```
+E apusys: memAlloc: map device va fail(4980736/256/0/0x1)
+```
+The ~5MB decode buffer fails to import. Prefill succeeds (251 partitions restored, partition-level warmup runs), but decode cannot allocate.
+
+### Root Cause Analysis — APUSys DRAM Pool Exhaustion During Decode (2026-05-10)
+
+~125 prefill DLA partitions each create a `NeuronExecution`. `AttachInput`/`AttachOutput` call `NeuronExecution_setInputFromMemory` / `NeuronExecution_setOutputFromMemory` immediately, importing tensor buffers into the APUSys device-VA DRAM pool. These imports persist for the lifetime of the `NeuronExecution` object.
+
+`DetachInput`/`DetachOutput` in the MediaTek dispatch implementation are no-ops — they do not release APUSys imports. After all ~125 prefill partitions' `AttachInput`/`AttachOutput` calls complete, the entire ~16MB APUSys pool is consumed. When decode's DispatchDelegate then tries to `RegisterTensorBuffer` + `AttachInput` for its ~5MB buffer, the pool returns OOM.
+
+**Key insight**: APUSys imports held per `NeuronExecution` are released only when `NeuronExecution_free` is called — not at `execution_compute` completion, not at `DetachInput`/`DetachOutput`.
+
+### Fix Attempt — Lazy Import + Execution Recreation (v7, 2026-05-11)
+
+Source rebuild of `libLiteRtDispatch_MediaTek.so` from `src/LiteRT-LM` (LiteRT commit `472d1c0f`), Bazel workspace `042ed1f5`.
+
+**Three changes in source:**
+
+1. **Strides check removed** from `litert_dispatch_device_context.cc:RegisterTensorBuffer` — source equivalent of the binary NOP.
+
+2. **Lazy-import pattern** in `litert_dispatch_invocation_context.cc/.h`:
+   - `AttachInput`/`AttachOutput` push `(index, handle)` pairs into `pending_inputs_`/`pending_outputs_` member vectors instead of calling APUSys immediately.
+   - `Invoke()` iterates these vectors, calls `execution_set_input/output_from_memory` (APUSys import happens here, right before compute), calls `execution_compute`, then immediately frees the `NeuronExecution` and recreates it — releasing all APUSys DRAM imports after each partition's compute completes.
+   - Pending vectors persist across `Invoke()` calls (DispatchDelegateKernel only calls `AttachInput`/`AttachOutput` on the first `Eval()`, then sets `attached=true`).
+
+3. **`LiteRtDispatchInitializeT` 2-arg signature** — LiteRT v2.1.4 runtime calls with `(LiteRtEnvironment, LiteRtOptions)`; the `576fe2d1` LiteRT commit changed this to a 3-arg form `(const LiteRtRuntimeContext*, LiteRtEnvironment, LiteRtOptions)`. The `472d1c0f` commit already uses 2-arg; ensured consistency in the cached headers.
+
+**Build result**: 197 Bazel actions. Output: 1.7 MB unstripped, stripped to 293 KB with `llvm-strip --strip-unneeded`.
+
+**Status (2026-05-11)**: Library deployed to worktree jniLibs. Debug APK built (`assembleDebug` succeeded, 73 tasks). Device currently unreachable — awaiting reconnection to run smoke test.
+
 ---
 
 ## Next Steps
 
-### Attempt 6 — prefill_256, cache_256 (recommended)
+### Attempt 6 — prefill_256, cache_256 (recommended — pre-v7 analysis, now superseded)
 
 **Predicted allocation**: `2,415,919,104 / 256 + 16,384 = 9,453,568 bytes (~9.4MB)` → fits in ~16MB pool.
 
@@ -431,3 +514,29 @@ tail -f ~/src/litert-build/tmp/gemma4-mt6985-build-256-p256.log
 ```
 
 Also create `tools/run_nightly_export_cache256_p256.sh` (copy of cache64_p64 variant with updated params).
+
+---
+
+## Current Status (2026-05-11)
+
+### Active: v7 dispatch library smoke test
+
+Debug APK with v7 `libLiteRtDispatch_MediaTek.so` (lazy-import + strides removed) is built and waiting.
+
+When device reconnects:
+```bash
+ADB="adb -s 100.104.183.118:5555"
+/home/ae/android-sdk/platform-tools/$ADB connect 100.104.183.118:5555
+cd /home/ae/weight-loss-app/.worktrees/npu-rebase/android && ./gradlew installDebug
+
+PKG="com.dreef3.weightlossapp.debug"
+MAIN="$PKG/com.dreef3.weightlossapp.app.MainActivity"
+$ADB shell am start -n $MAIN --es setCoachModelStorageKey gemma3_mt6985
+$ADB shell am start -n $MAIN --ez runSelectedCoachSmokeTest true
+APP_PID=$($ADB shell pidof $PKG | tr -d '\r')
+$ADB logcat --pid=$APP_PID | grep -E "smoke test|failed|succeeded"
+```
+
+**Expected success**: `Selected coach smoke test succeeded [cold] in Xms: OK`  
+**If decode OOM persists**: APUSys imports are still not being released → lazy-import may not be applied to all partition `NeuronExecution` objects; check if any `AttachInput` call path bypasses the new implementation.  
+**If a different error appears**: Check logcat for the new failure mode.
