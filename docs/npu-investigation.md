@@ -560,27 +560,100 @@ bazelisk build --config=android_arm64 \
 
 Binary copied to `.worktrees/npu-rebase/android/app/src/main/jniLibs/arm64-v8a/libLiteRtDispatch_MediaTek.so`.
 
+## Problem 8: DLA Format Version Mismatch (V230703 vs V222104 / V245303)
+
+### Root Cause
+
+After fixing the SIGABRT (v9 dispatch), the smoke test ran but the DLA execution failed with a format version error.
+
+Two NeuroPilot adapter libraries exist on the device:
+
+| Library | Internal version | Runtime DLA format |
+|---------|-----------------|-------------------|
+| `libneuronusdk_adapter.mtk.so` | 8.2.26 (NeuroPilot 6.0.6) | V222104 |
+| `libneuronusdk_adapter.9.mtk.so` | 9.0.11 | V245303 |
+
+The model was compiled with the v8_0_10 SDK → produces V230703 DLA format.
+
+- V230703 ≠ V222104 (base adapter rejects it)
+- V230703 ≠ V245303 (v9 adapter also rejects it)
+
+The `.9.mtk.so` adapter was not loaded because `GetNeuroPilotMagicNumber()` (which calls
+`NeuronService_getNeuroPilotMagicNumber` via Binder) is blocked by SELinux on MIUI, returning -1.
+The check `magic_number >= kMinMagicNumberForNeuronService (300)` fails, so the v9 adapter path
+was never attempted.
+
+### Fix (v11, 2026-05-11)
+
+**Part 1: Bypass SELinux magic-number gate for `.9.mtk.so`.**
+
+Modified `neuron_adapter_api.cc` (`LoadSymbols`) to unconditionally add `.9.mtk.so` last in the
+adapter search list (the loading loop doesn't break on first success — last winner wins):
+
+```cpp
+so_paths.push_back("libneuronusdk_adapter.mtk.so");
+so_paths.push_back("libneuron_adapter_mgvi.so");
+so_paths.push_back(kLibNeuronAdapterLib);
+so_paths.push_back("libneuronusdk_adapter.9.mtk.so");  // wins if present (v9 adapter)
+```
+
+Rebuilt dispatch:
+```bash
+cd /home/ae/src/LiteRT-LM
+bazelisk build --config=android_arm64 \
+  --define=resolve_symbols_in_exec=false \
+  @litert//litert/vendors/mediatek/dispatch:dispatch_api_so
+```
+
+**Part 2 (PENDING): Recompile model with v9_0_3 SDK on GCP.**
+
+The v9 adapter needs V245303 format DLA. The v9_0_3 SDK (the only other bundled SDK in LiteRT-LM)
+likely produces this format. Must recompile on GCP VM:
+
+```bash
+# On GCP VM (100.104.176.14) when accessible:
+cd /home/ae/src/LiteRT-LM
+MEDIATEK_SDK_LIB_SUBDIR=v9_0_3/host/lib \
+python tools/build_mt6985_gemma3_litertlm.py \
+  --model google/gemma-3-270m-it \
+  --model-family gemma3 \
+  --cache-length 128 \
+  --prefill-lengths 128 \
+  --output-dir /path/to/gemma3-270m-v9-build
+```
+
+(Verify the tool accepts `MEDIATEK_SDK_LIB_SUBDIR` or equivalent flag — see
+`ci/tools/python/vendor_sdk/mediatek/ai_edge_litert_sdk_mediatek/__init__.py` version_map.)
+
+**Binary patch not viable**: V230703 DLA format version is not stored as a simple integer at a
+fixed offset in the `.litertlm` file — 0 matches for decimal LE/BE, ASCII, or 3-byte hex search.
+Patching without knowing the full MediaTek DLA binary format is not feasible.
+
 ## Current Status (2026-05-11)
 
-### Active: v9 dispatch library smoke test
+### Active: v11 dispatch + model recompile required
 
-Debug APK with v9 `libLiteRtDispatch_MediaTek.so` (resolve_symbols_in_exec=false + lazy-import + strides removed) is ready. Device offline.
+v11 `libLiteRtDispatch_MediaTek.so` (with `.9.mtk.so` unconditionally last) is committed to
+`.worktrees/npu-rebase/android/app/src/main/jniLibs/arm64-v8a/`.
 
-When device reconnects:
+**Blocker**: Model must be recompiled on GCP with v9_0_3 SDK to produce V245303 DLA format
+compatible with the v9 adapter. GCP VM at `100.104.176.14` was unreachable at time of writing.
+
+When GCP is accessible and model is recompiled:
+1. Push new `.litertlm` to device (check cellular before adb push)
+2. Install APK with v11 dispatch: `cd android && ./gradlew installDebug`
+3. Run smoke test:
+
 ```bash
 ADB=/home/ae/android-sdk/platform-tools/adb
-$ADB connect 100.104.183.118:5555
-cd /home/ae/weight-loss-app/.worktrees/npu-rebase/android && ./gradlew installDebug
-
 PKG="com.dreef3.weightlossapp.debug"
 MAIN="$PKG/com.dreef3.weightlossapp.app.MainActivity"
 $ADB -s 100.104.183.118:5555 shell am start -n $MAIN --es setCoachModelStorageKey gemma3_mt6985
 $ADB -s 100.104.183.118:5555 shell am start -n $MAIN --ez runSelectedCoachSmokeTest true
 APP_PID=$($ADB -s 100.104.183.118:5555 shell pidof $PKG | tr -d '\r')
-$ADB -s 100.104.183.118:5555 logcat --pid=$APP_PID | grep -E "smoke test|failed|succeeded|SIGABRT|Fatal"
+$ADB -s 100.104.183.118:5555 logcat --pid=$APP_PID | grep -E "smoke test|failed|succeeded|FATAL|DLA"
 ```
 
 **Expected success**: `Selected coach smoke test succeeded [cold] in Xms: OK`  
-**If SIGABRT still occurs**: Check logcat for which UND symbol failed; verify `libLiteRt.so` version in jniLibs exports versioned symbols.  
-**If decode OOM persists**: APUSys lazy-import fix (v7) wasn't reached before; now it can be evaluated.  
-**If a different error appears**: Check logcat for the new failure mode.
+**If DLA format still rejected**: Confirm v9 adapter is actually loading (check logcat for "9.mtk.so" line), then verify the SDK version_map and recompile script flags.  
+**If APUSys OOM returns**: The lazy-import fix (v7, compiled into v9/v11 dispatch) should handle it; check logcat for `memImport` errors.
