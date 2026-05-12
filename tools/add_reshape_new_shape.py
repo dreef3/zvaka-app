@@ -266,12 +266,29 @@ def patch_model(buf_in: bytearray) -> bytearray:
                 if shape_tidx < len(tensor_tables):
                     out_shape = _shape_from_buffer(buf, tensor_tables[shape_tidx], buffer_tables)
 
-            # If we still have no shape, skip patching this op to avoid an empty
-            # new_shape that would cause a NeuronAdapter "Invalid number of in operands".
-            if not out_shape:
-                print(f"  WARNING: skipping Reshape op (no shape found), sg_pos={sg_pos}, i={i}",
-                      file=sys.stderr)
-                continue
+            # If out_shape is still not found, derive it from the data input tensor's
+            # static shape as a last resort.  The shape tensor for these ops has 0
+            # elements (shape=[0], empty buffer), which in TFLite means "scalar reshape".
+            # We prefer the data-input shape over skipping so the op gets new_shape set
+            # and can be compiled by NeuronAdapter.
+            if out_shape is None:
+                # out_shape==None should never reach here; treat as empty.
+                out_shape = []
+            # out_shape==[] means scalar target (0-dim tensor).  If the data input
+            # has a known static shape, use that instead to avoid a 0-element new_shape
+            # that some NeuronAdapter versions reject.
+            if not out_shape and len(inputs_values) > 0:
+                data_tidx = inputs_values[0]
+                if 0 <= data_tidx < len(tensor_tables):
+                    data_ts_fpos = _vf(buf, tensor_tables[data_tidx], 0)
+                    data_shape = _vec_i32(buf, data_ts_fpos) if data_ts_fpos else []
+                    if data_shape:
+                        out_shape = data_shape
+                        print(f"  INFO: using data-input shape {out_shape} for Reshape op "
+                              f"(scalar target, sg_pos={sg_pos}, i={i})",
+                              file=sys.stderr)
+            if out_shape is None:
+                out_shape = []
 
             # Zero out inputs[1] so the SDK reads shape from builtin_options.new_shape only.
             if len(inputs_values) > 1:
