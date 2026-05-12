@@ -287,6 +287,29 @@ def patch_model(buf_in: bytearray) -> bytearray:
                         print(f"  INFO: using data-input shape {out_shape} for Reshape op "
                               f"(scalar target, sg_pos={sg_pos}, i={i})",
                               file=sys.stderr)
+                        # The MediaTek legalizer reads new_shape from the OUTPUT
+                        # tensor's static shape (LiteRtGetRankedTensorType), not from
+                        # builtin_options.new_shape (no LiteRt API exists for that).
+                        # Patch the output tensor's shape field so the legalizer sees [1].
+                        if outputs_values:
+                            out_tidx = outputs_values[0]
+                            if 0 <= out_tidx < len(tensor_tables):
+                                out_ts_fpos = _vf(buf, tensor_tables[out_tidx], 0)
+                                if out_ts_fpos is not None:
+                                    # Append new shape vector (4-byte count + 4 bytes/val).
+                                    r = len(buf) % 4
+                                    if r:
+                                        buf += b'\x00' * (4 - r)
+                                    new_vec_pos = len(buf)
+                                    buf += struct.pack("<I", len(out_shape))
+                                    for v in out_shape:
+                                        buf += struct.pack("<i", v)
+                                    # Redirect tensor's shape field to new vector.
+                                    struct.pack_into("<i", buf, out_ts_fpos,
+                                                     new_vec_pos - out_ts_fpos)
+                                    print(f"  INFO: patched output tensor {out_tidx} "
+                                          f"shape to {out_shape} in buf",
+                                          file=sys.stderr)
             if out_shape is None:
                 out_shape = []
 
