@@ -35,8 +35,8 @@
 #include <unistd.h>
 
 /* ── NNAPI constants ─────────────────────────────────────────────────────── */
-#define NNAPI_RESHAPE   3   /* OperationType RESHAPE */
-#define NNAPI_INT32     6   /* OperandCode TENSOR_INT32 */
+#define NNAPI_RESHAPE   22  /* OperationType ANEURALNETWORKS_RESHAPE */
+#define NNAPI_INT32     4   /* OperandCode ANEURALNETWORKS_TENSOR_INT32 */
 
 typedef struct NeuronModel       NeuronModel;
 typedef struct NeuronCompilation NeuronCompilation;
@@ -341,6 +341,18 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
         /* Patch: force INT32 RESHAPE ops to unsupported. */
         int patched = 0;
         if (s) {
+            /* Diagnostic: log first 10 ops to confirm type values */
+            int diag_limit = num_ops < 10 ? num_ops : 10;
+            for (int i = 0; i < diag_limit; i++) {
+                typeof(s->ops[0]) *op = &s->ops[i];
+                int32_t inp0_type = (op->n_inputs > 0 && op->inputs[0] < (uint32_t)s->operand_count)
+                                    ? s->operand_type[op->inputs[0]] : -1;
+                fprintf(L, "  op[%d] type=%d supported=%d inp0_idx=%u inp0_type=%d\n",
+                        i, op->type, (int)supported[i],
+                        op->n_inputs > 0 ? op->inputs[0] : 9999u, inp0_type);
+            }
+            fflush(L);
+
             for (int i = 0; i < num_ops; i++) {
                 if (!supported[i]) continue;
                 typeof(s->ops[0]) *op = &s->ops[i];
