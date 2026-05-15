@@ -35,8 +35,13 @@
 #include <unistd.h>
 
 /* ── NNAPI constants ─────────────────────────────────────────────────────── */
-#define NNAPI_RESHAPE   22  /* OperationType ANEURALNETWORKS_RESHAPE */
-#define NNAPI_INT32     4   /* OperandCode ANEURALNETWORKS_TENSOR_INT32 */
+#define NNAPI_RESHAPE          22       /* OperationType ANEURALNETWORKS_RESHAPE */
+#define NNAPI_INT32             4       /* OperandCode ANEURALNETWORKS_TENSOR_INT32 */
+/* NNAPI extension op base (vendor-specific fused ops, e.g. MediaTek RMSNorm).
+ * NeuronAdapter v9_0_3 marks these as supported but then inlines them into
+ * TRANSPOSE+MEAN primitives that individually fail the second partition pass,
+ * yielding "selected 0 ops".  Force them to CPU instead. */
+#define NNAPI_EXTENSION_BASE  0x10000  /* = 65536 */
 
 typedef struct NeuronModel       NeuronModel;
 typedef struct NeuronCompilation NeuronCompilation;
@@ -67,6 +72,9 @@ static int  (*real_NeuronCompilation_createWithOptions)(NeuronModel *,
              NeuronCompilation **, const char *)                                           = NULL;
 static void (*real_NeuronCompilation_free)(NeuronCompilation *)                           = NULL;
 static int  (*real_NeuronCompilation_getSupportedOperations)(NeuronCompilation *, uint32_t, bool *) = NULL;
+static int  (*real_NeuronCompilation_finish)(NeuronCompilation *)                                    = NULL;
+static int  (*real_NeuronCompilation_getCompiledNetworkSize)(NeuronCompilation *, size_t *)          = NULL;
+static int  (*real_NeuronCompilation_storeCompiledNetwork)(NeuronCompilation *, void *, size_t)      = NULL;
 
 __attribute__((constructor))
 static void shim_init(void) {
@@ -86,6 +94,12 @@ static void shim_init(void) {
         dlsym(RTLD_NEXT, "NeuronCompilation_free");
     real_NeuronCompilation_getSupportedOperations =
         dlsym(RTLD_NEXT, "NeuronCompilation_getSupportedOperations");
+    real_NeuronCompilation_finish =
+        dlsym(RTLD_NEXT, "NeuronCompilation_finish");
+    real_NeuronCompilation_getCompiledNetworkSize =
+        dlsym(RTLD_NEXT, "NeuronCompilation_getCompiledNetworkSize");
+    real_NeuronCompilation_storeCompiledNetwork =
+        dlsym(RTLD_NEXT, "NeuronCompilation_storeCompiledNetwork");
 
     /* Fallback: if RTLD_NEXT failed (dlopen'd context), try the real lib directly. */
     if (!real_NeuronModel_addOperand) {
@@ -100,6 +114,12 @@ static void shim_init(void) {
             real_NeuronCompilation_free             = dlsym(h, "NeuronCompilation_free");
             real_NeuronCompilation_getSupportedOperations =
                 dlsym(h, "NeuronCompilation_getSupportedOperations");
+            real_NeuronCompilation_finish =
+                dlsym(h, "NeuronCompilation_finish");
+            real_NeuronCompilation_getCompiledNetworkSize =
+                dlsym(h, "NeuronCompilation_getCompiledNetworkSize");
+            real_NeuronCompilation_storeCompiledNetwork =
+                dlsym(h, "NeuronCompilation_storeCompiledNetwork");
             fprintf(stderr, "[neuron_shim] init via dlopen fallback\n");
         } else {
             fprintf(stderr, "[neuron_shim] ERROR: could not load libneuron_adapter_real.so: %s\n",
@@ -177,6 +197,28 @@ static void comp_remove(NeuronCompilation *c) {
     for (int i = 0; i < g_comp_count; i++) {
         if (g_compilations[i].compilation == c) {
             g_compilations[i] = g_compilations[--g_comp_count];
+            return;
+        }
+    }
+}
+
+/* ── Fake-compilation tracking ────────────────────────────────────────────── */
+#define MAX_FAKE 64
+static NeuronCompilation *g_fake_comp[MAX_FAKE];
+static int                g_fake_count = 0;
+
+static bool fake_is(NeuronCompilation *c) {
+    for (int i = 0; i < g_fake_count; i++)
+        if (g_fake_comp[i] == c) return true;
+    return false;
+}
+static void fake_mark(NeuronCompilation *c) {
+    if (g_fake_count < MAX_FAKE) g_fake_comp[g_fake_count++] = c;
+}
+static void fake_unmark(NeuronCompilation *c) {
+    for (int i = 0; i < g_fake_count; i++) {
+        if (g_fake_comp[i] == c) {
+            g_fake_comp[i] = g_fake_comp[--g_fake_count];
             return;
         }
     }
@@ -264,7 +306,67 @@ int NeuronCompilation_createWithOptions(NeuronModel *model,
 void NeuronCompilation_free(NeuronCompilation *compilation) {
     fprintf(stderr, "[neuron_shim] NeuronCompilation_free comp=%p\n", (void *)compilation);
     comp_remove(compilation);
+    fake_unmark(compilation);
     if (real_NeuronCompilation_free) real_NeuronCompilation_free(compilation);
+}
+
+/* When NeuronCompilation_finish fails (MDLA rejects a subgraph), we return 0
+ * (fake success) so apply_plugin doesn't abort the whole compilation.  We mark
+ * the compilation as "fake".  Subsequent getCompiledNetworkSize → 0 bytes and
+ * storeCompiledNetwork → no-op so the compiled TFLite has an empty DLA entry
+ * for that subgraph.  LiteRT then runs those ops via the CPU delegate at
+ * inference time. */
+int NeuronCompilation_finish(NeuronCompilation *compilation) {
+    FILE *L = shim_log();
+    NeuronModel *m    = comp_find_model(compilation);
+    ModelState  *s    = m ? find_model(m) : NULL;
+    int          nops = s ? s->op_count : -1;
+    int rc = real_NeuronCompilation_finish
+             ? real_NeuronCompilation_finish(compilation) : -1;
+    if (rc != 0) {
+        fprintf(L,
+                "[neuron_shim] NeuronCompilation_finish FAILED rc=%d nops=%d → fake success\n",
+                rc, nops);
+        fprintf(stderr,
+                "[neuron_shim] NeuronCompilation_finish FAILED rc=%d nops=%d → fake success\n",
+                rc, nops);
+        if (s) {
+            fprintf(L, "  op_types:");
+            for (int i = 0; i < s->op_count && i < 32; i++)
+                fprintf(L, " %d", s->ops[i].type);
+            fprintf(L, "\n");
+        }
+        fflush(L);
+        fake_mark(compilation);
+        return 0;
+    }
+    fprintf(L, "[neuron_shim] NeuronCompilation_finish OK nops=%d\n", nops);
+    fflush(L);
+    return 0;
+}
+
+int NeuronCompilation_getCompiledNetworkSize(NeuronCompilation *compilation, size_t *size) {
+    FILE *L = shim_log();
+    if (fake_is(compilation)) {
+        if (size) *size = 0;
+        fprintf(L, "[neuron_shim] getCompiledNetworkSize: fake comp → 0 bytes\n");
+        fflush(L);
+        return 0;
+    }
+    return real_NeuronCompilation_getCompiledNetworkSize
+           ? real_NeuronCompilation_getCompiledNetworkSize(compilation, size) : -1;
+}
+
+int NeuronCompilation_storeCompiledNetwork(NeuronCompilation *compilation,
+                                            void *buffer, size_t size) {
+    FILE *L = shim_log();
+    if (fake_is(compilation)) {
+        fprintf(L, "[neuron_shim] storeCompiledNetwork: fake comp → no-op (size=%zu)\n", size);
+        fflush(L);
+        return 0;
+    }
+    return real_NeuronCompilation_storeCompiledNetwork
+           ? real_NeuronCompilation_storeCompiledNetwork(compilation, buffer, size) : -1;
 }
 
 /* Real signature (confirmed by diagnostic): 3-arg (compilation, numOps, supported[]).
@@ -321,25 +423,70 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
         int wstatus = 0;
         waitpid(child, &wstatus, 0);
 
-        bool done_flag = shared[buf_count];
+        bool done_flag   = shared[buf_count];
+        bool child_ok    = WIFEXITED(wstatus);  /* false → killed by signal */
+        int  child_sig   = child_ok ? 0 : WTERMSIG(wstatus);
 
         fprintf(L,
-                "[neuron_shim] getSupportedOps: child exited status=%d done_flag=%d\n",
-                WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : -1, (int)done_flag);
+                "[neuron_shim] getSupportedOps: child exited=%d status=%d sig=%d done_flag=%d\n",
+                child_ok,
+                child_ok ? WEXITSTATUS(wstatus) : -1,
+                child_sig, (int)done_flag);
         fflush(L);
 
-        /* Copy result to caller's buffer regardless of child exit code —
-         * the real function fills shared[] before calling exit(), so the data
-         * is valid even when child_rc is non-zero. */
-        fprintf(L, "[neuron_shim] getSupportedOps: BEFORE_MEMCPY supported=%p shared=%p numOps=%u num_ops=%d s=%p\n",
-                (void *)supported, (void *)shared, numOps, num_ops, (void *)s); fflush(L);
-        memcpy(supported, shared, (size_t)numOps * sizeof(bool));
-        fprintf(L, "[neuron_shim] getSupportedOps: AFTER_MEMCPY\n"); fflush(L);
-        munmap(shared, mmap_sz);
-        fprintf(L, "[neuron_shim] getSupportedOps: AFTER_MUNMAP\n"); fflush(L);
+        if (child_ok) {
+            /* Normal case: real function filled shared[] before calling exit().
+             * The data is valid even when WEXITSTATUS is non-zero. */
+            memcpy(supported, shared, (size_t)numOps * sizeof(bool));
+        } else {
+            /* Child was killed by signal — real getSupportedOperations crashed.
+             * Shared buffer is all-zeros (unreliable).  Use a whitelist of NNAPI
+             * op types known to compile on MT6985 MDLA.  Anything not in the list
+             * (e.g. LESS, CAST, FLOOR_DIV) stays on CPU — prevents MDLA rejecting
+             * ops it doesn't support. */
+            static const int32_t npu_whitelist[] = {
+                0,   /* ADD */
+                2,   /* CONCATENATION */
+                /* 9 = FULLY_CONNECTED excluded: FC bias patched as activation tensor
+                 *   (dynamic input), MDLA rejects "bias as inputs not supported" and
+                 *   makes the whole mixed subgraph fail — run FC on CPU instead. */
+                18,  /* MUL */
+                22,  /* RESHAPE (float; INT32 excluded by inp0 check above) */
+                25,  /* SOFTMAX */
+                31,  /* MEAN */
+                36,  /* SUB */
+                37,  /* TRANSPOSE */
+                53,  /* GREATER */
+                86,  /* BATCH_MATMUL */
+            };
+            static const int npu_wl_sz =
+                (int)(sizeof(npu_whitelist) / sizeof(npu_whitelist[0]));
 
-        /* Patch: force INT32 RESHAPE ops to unsupported. */
-        int patched = 0;
+            fprintf(L,
+                    "[neuron_shim] getSupportedOps: child SIG%d — whitelist fallback (%d types)\n",
+                    child_sig, npu_wl_sz);
+            fflush(L);
+
+            memset(supported, 0, (size_t)numOps * sizeof(bool));
+            if (s) {
+                for (int i = 0; i < num_ops && i < (int)numOps; i++) {
+                    typeof(s->ops[0]) *op = &s->ops[i];
+                    /* MDLA cannot handle any op whose primary input is INT32 */
+                    if (op->n_inputs > 0 && op->inputs[0] < (uint32_t)s->operand_count &&
+                        s->operand_type[op->inputs[0]] == NNAPI_INT32) continue;
+                    for (int j = 0; j < npu_wl_sz; j++) {
+                        if (op->type != npu_whitelist[j]) continue;
+                        supported[i] = true;
+                        break;
+                    }
+                }
+            }
+        }
+        munmap(shared, mmap_sz);
+
+        /* Patch: force INT32 RESHAPE ops and extension ops to unsupported. */
+        int patched_reshape = 0;
+        int patched_ext     = 0;
         if (s) {
             /* Diagnostic: log first 10 ops to confirm type values */
             int diag_limit = num_ops < 10 ? num_ops : 10;
@@ -356,22 +503,35 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
             for (int i = 0; i < num_ops; i++) {
                 if (!supported[i]) continue;
                 typeof(s->ops[0]) *op = &s->ops[i];
+
+                /* Force extension/vendor-fused ops (type >= 0x10000) to CPU.
+                 * These composite ops get inlined into TRANSPOSE+MEAN primitives
+                 * that the second-pass partition rejects entirely ("selected 0 ops"). */
+                if (op->type >= NNAPI_EXTENSION_BASE) {
+                    supported[i] = false;
+                    patched_ext++;
+                    continue;
+                }
+
+                /* Force RESHAPE ops whose data input is INT32 to CPU.
+                 * NeuronAdapter v9_0_3 wrongly marks these as supported; MDLA
+                 * rejects them with NoExecPlan at NeuronCompilation_finish time. */
                 if (op->type != NNAPI_RESHAPE) continue;
                 if (op->n_inputs < 1) continue;
                 uint32_t data_idx = op->inputs[0];
                 if (data_idx >= (uint32_t)s->operand_count) continue;
                 if (s->operand_type[data_idx] == NNAPI_INT32) {
                     supported[i] = false;
-                    patched++;
+                    patched_reshape++;
                 }
             }
         }
         fprintf(stderr,
-                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d INT32-RESHAPE unsupported\n",
-                num_ops, patched);
+                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d INT32-RESHAPE + %d EXT unsupported\n",
+                num_ops, patched_reshape, patched_ext);
         fprintf(L,
-                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d INT32-RESHAPE unsupported\n",
-                num_ops, patched);
+                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d INT32-RESHAPE + %d EXT unsupported\n",
+                num_ops, patched_reshape, patched_ext);
         fflush(L);
         /* Return 0 — callers must not abort compilation based on getSupportedOps rc. */
         return 0;
