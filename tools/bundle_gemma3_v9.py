@@ -107,6 +107,265 @@ def _build_llm_metadata_proto(tokenizer, gen_config, cache_length: int, chat_tem
     return llm_metadata
 
 
+def _restore_fc_bias_compiled(compiled_path: pathlib.Path, work_dir: pathlib.Path) -> pathlib.Path:
+    """Undo Pass 2 of add_reshape_new_shape.py in compiled_MediaTek_MT6985.tflite.
+
+    Pass 2 sets FC ops' absent bias (inputs[2]=-1) to inputs[0] so NeuronAdapter's
+    DLA float32 type check passes at compile time.  On device the TFLite CPU kernel
+    validates NumElements(bias)==SizeOfDimension(filter,0) and fails.  Restore -1.
+    """
+    import struct
+
+    def _r32(b, o): return struct.unpack_from("<i", b, o)[0]
+    def _u32(b, o): return struct.unpack_from("<I", b, o)[0]
+    def _u16(b, o): return struct.unpack_from("<H", b, o)[0]
+    def _s8(b, o):  return struct.unpack_from("<b", b, o)[0]
+
+    def _vf(b, tp, fid):
+        vt  = tp - _r32(b, tp)
+        vsz = _u16(b, vt)
+        nf  = (vsz - 4) // 2
+        if fid >= nf: return None
+        off = _u16(b, vt + 4 + fid * 2)
+        return None if off == 0 else tp + off
+
+    def _vec_tables(b, fpos):
+        vp = fpos + _r32(b, fpos)
+        n  = _u32(b, vp)
+        return [vp + 4 + i * 4 + _r32(b, vp + 4 + i * 4) for i in range(n)]
+
+    def _bc(b, oc_pos):
+        f3 = _vf(b, oc_pos, 3)
+        if f3: return _r32(b, f3)
+        f0 = _vf(b, oc_pos, 0)
+        if f0: return _s8(b, f0)
+        return 0
+
+    FC_BC = 9
+    buf = bytearray(compiled_path.read_bytes())
+    model_pos = _u32(buf, 0)
+    oc_fpos   = _vf(buf, model_pos, 1)
+    sg_fpos   = _vf(buf, model_pos, 2)
+    if oc_fpos is None or sg_fpos is None:
+        print("[bundle] restore_fc_bias: no op-codes or subgraphs found, skipping", file=sys.stderr)
+        return compiled_path
+
+    oc_tables = _vec_tables(buf, oc_fpos)
+    sg_tables = _vec_tables(buf, sg_fpos)
+    count = 0
+
+    for sg_pos in sg_tables:
+        op_fpos = _vf(buf, sg_pos, 3)
+        if op_fpos is None:
+            continue
+        for op_pos in _vec_tables(buf, op_fpos):
+            oc_idx_fpos = _vf(buf, op_pos, 0)
+            oc_idx = 0 if oc_idx_fpos is None else _u32(buf, oc_idx_fpos)
+            if not (oc_idx < len(oc_tables) and _bc(buf, oc_tables[oc_idx]) == FC_BC):
+                continue
+            inp_fpos = _vf(buf, op_pos, 1)
+            if inp_fpos is None:
+                continue
+            ivp = inp_fpos + _r32(buf, inp_fpos)
+            if _u32(buf, ivp) < 3:
+                continue
+            bias_slot = ivp + 4 + 8   # inputs[2]
+            data_slot = ivp + 4       # inputs[0]
+            if _r32(buf, bias_slot) == _r32(buf, data_slot):
+                struct.pack_into("<i", buf, bias_slot, -1)
+                count += 1
+
+    print(f"[bundle] FC bias slots restored: {count}", file=sys.stderr)
+    if count == 0:
+        return compiled_path
+
+    out_path = work_dir / "compiled_v9_fc_restored" / compiled_path.name
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(buf)
+    print(f"[bundle] Restored model written: {out_path}", file=sys.stderr)
+    return out_path
+
+
+def _fix_pack_scalar_inputs(compiled_path: pathlib.Path, work_dir: pathlib.Path) -> pathlib.Path:
+    """Restore PACK inputs to scalar (shape=[]) so PACK(N×[]) → [N] (1D).
+
+    Two categories of PACK inputs need fixing after Pass 0 patched shape=[] → [1]:
+
+      1. Constant scalar tensors (no producer op): zero declared shape count → [].
+      2. RESHAPE-produced scalars: zero the RESHAPE's shape-spec tensor embedded
+         buffer count → RESHAPE produces scalar at runtime; also zero both the
+         shape-spec tensor's and the PACK input tensor's declared shapes.
+
+    This fixes "PACK failed to prepare" (mixed [] / [1] inputs) and the
+    downstream "NumDimensions(start_indices) == 1 was not true" in DUS.
+    """
+    import struct
+
+    def _r32(b, o): return struct.unpack_from("<i", b, o)[0]
+    def _u32(b, o): return struct.unpack_from("<I", b, o)[0]
+    def _u16(b, o): return struct.unpack_from("<H", b, o)[0]
+    def _s8(b, o):  return struct.unpack_from("<b", b, o)[0]
+
+    def _vf(b, tp, fid):
+        vt  = tp - _r32(b, tp)
+        vsz = _u16(b, vt)
+        nf  = (vsz - 4) // 2
+        if fid >= nf: return None
+        off = _u16(b, vt + 4 + fid * 2)
+        return None if off == 0 else tp + off
+
+    def _vec_tables(b, fpos):
+        vp = fpos + _r32(b, fpos); n = _u32(b, vp)
+        return [vp + 4 + i * 4 + _r32(b, vp + 4 + i * 4) for i in range(n)]
+
+    def _vec_i32(b, fpos):
+        vp = fpos + _r32(b, fpos); n = _u32(b, vp)
+        return [_r32(b, vp + 4 + i * 4) for i in range(n)]
+
+    def _bc(b, oc_pos):
+        f3 = _vf(b, oc_pos, 3)
+        if f3: return _r32(b, f3)
+        f0 = _vf(b, oc_pos, 0)
+        if f0: return _s8(b, f0)
+        return 0
+
+    PACK_BC    = 83
+    RESHAPE_BC = 22
+
+    buf = bytearray(compiled_path.read_bytes())
+    model_pos = _u32(buf, 0)
+    oc_fpos   = _vf(buf, model_pos, 1)
+    sg_fpos   = _vf(buf, model_pos, 2)
+    buf_fpos  = _vf(buf, model_pos, 4)
+    if oc_fpos is None or sg_fpos is None:
+        return compiled_path
+
+    oc_tables     = _vec_tables(buf, oc_fpos)
+    sg_tables     = _vec_tables(buf, sg_fpos)
+    buffer_tables = _vec_tables(buf, buf_fpos) if buf_fpos else []
+    count = 0
+
+    for sg_pos in sg_tables:
+        t_fpos  = _vf(buf, sg_pos, 0)
+        op_fpos = _vf(buf, sg_pos, 3)
+        if t_fpos is None or op_fpos is None:
+            continue
+        tensor_tables = _vec_tables(buf, t_fpos)
+        op_tables     = _vec_tables(buf, op_fpos)
+
+        # Build producer map: tensor_idx → op_pos
+        producer: dict[int, int] = {}
+        for op_pos in op_tables:
+            out_fpos = _vf(buf, op_pos, 2)
+            if out_fpos is None:
+                continue
+            for tidx in _vec_i32(buf, out_fpos):
+                if 0 <= tidx < len(tensor_tables):
+                    producer[tidx] = op_pos
+
+        zeroed_shape_vecs: set[int] = set()
+        zeroed_buf_data: set[int]   = set()
+
+        def _zero_shape_vec(tt: int) -> bool:
+            ts_fpos = _vf(buf, tt, 0)
+            if ts_fpos is None:
+                return False
+            shape_vp = ts_fpos + _r32(buf, ts_fpos)
+            if shape_vp in zeroed_shape_vecs:
+                return False
+            if _u32(buf, shape_vp) == 0:
+                zeroed_shape_vecs.add(shape_vp)
+                return False
+            struct.pack_into("<I", buf, shape_vp, 0)
+            zeroed_shape_vecs.add(shape_vp)
+            return True
+
+        def _zero_embedded_buffer_count(buf_id: int) -> bool:
+            if buf_id == 0 or buf_id >= len(buffer_tables):
+                return False
+            bt = buffer_tables[buf_id]
+            f0 = _vf(buf, bt, 0)
+            if f0 is None:
+                return False
+            data_vp = f0 + _r32(buf, f0)
+            if data_vp in zeroed_buf_data:
+                return False
+            if _u32(buf, data_vp) == 0:
+                zeroed_buf_data.add(data_vp)
+                return False
+            struct.pack_into("<I", buf, data_vp, 0)
+            zeroed_buf_data.add(data_vp)
+            return True
+
+        for op_pos in op_tables:
+            oc_idx_fpos = _vf(buf, op_pos, 0)
+            oc_idx = 0 if oc_idx_fpos is None else _u32(buf, oc_idx_fpos)
+            if not (oc_idx < len(oc_tables) and _bc(buf, oc_tables[oc_idx]) == PACK_BC):
+                continue
+            inp_fpos = _vf(buf, op_pos, 1)
+            if inp_fpos is None:
+                continue
+
+            for tidx in _vec_i32(buf, inp_fpos):
+                if not (0 <= tidx < len(tensor_tables)):
+                    continue
+                tt = tensor_tables[tidx]
+                ts_fpos = _vf(buf, tt, 0)
+                if ts_fpos is None:
+                    continue
+                shape_vp = ts_fpos + _r32(buf, ts_fpos)
+                if _u32(buf, shape_vp) != 1:
+                    continue
+                if _r32(buf, shape_vp + 4) != 1:
+                    continue
+
+                prod_op = producer.get(tidx)
+                if prod_op is not None:
+                    # RESHAPE-produced PACK input: zero the shape-spec buffer
+                    prod_oc_idx_fpos = _vf(buf, prod_op, 0)
+                    prod_oc_idx = (0 if prod_oc_idx_fpos is None
+                                   else _u32(buf, prod_oc_idx_fpos))
+                    if not (prod_oc_idx < len(oc_tables)
+                            and _bc(buf, oc_tables[prod_oc_idx]) == RESHAPE_BC):
+                        continue
+                    prod_inp_fpos = _vf(buf, prod_op, 1)
+                    if prod_inp_fpos is None:
+                        continue
+                    prod_inputs = _vec_i32(buf, prod_inp_fpos)
+                    if len(prod_inputs) < 2 or prod_inputs[1] < 0:
+                        continue
+                    spec_tidx = prod_inputs[1]
+                    if spec_tidx >= len(tensor_tables):
+                        continue
+                    spec_tt = tensor_tables[spec_tidx]
+                    spec_bid_fpos = _vf(buf, spec_tt, 2)
+                    if spec_bid_fpos is None:
+                        continue
+                    spec_buf_id = _u32(buf, spec_bid_fpos)
+                    if _zero_embedded_buffer_count(spec_buf_id):
+                        print(f"[bundle]   zeroed shape-spec buffer {spec_buf_id} "
+                              f"for RESHAPE→t{tidx} (PACK input)", file=sys.stderr)
+                        count += 1
+                    _zero_shape_vec(spec_tt)
+                    _zero_shape_vec(tt)
+                else:
+                    # Constant PACK input: zero its declared shape
+                    if _zero_shape_vec(tt):
+                        print(f"[bundle]   zeroed declared shape of constant t{tidx} "
+                              f"(PACK scalar input)", file=sys.stderr)
+                        count += 1
+
+    print(f"[bundle] PACK scalar inputs fixed: {count}", file=sys.stderr)
+    if count == 0:
+        return compiled_path
+
+    out_path = work_dir / "compiled_v9_pack_fixed" / compiled_path.name
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(buf)
+    print(f"[bundle] PACK-fixed model written: {out_path}", file=sys.stderr)
+    return out_path
+
+
 def _aot_compile_embedder(embedder_input: pathlib.Path, output_dir: pathlib.Path, sdk_subdir: str, litert_torch_root: pathlib.Path) -> pathlib.Path:
     _add_python_path(litert_torch_root)
 
@@ -176,6 +435,18 @@ def main() -> int:
     if not main_compiled.exists():
         print(f"ERROR: main compiled model not found: {main_compiled}", file=sys.stderr)
         return 1
+
+    # Undo Pass 2 FC bias hack before bundling (restore inputs[2] = -1).
+    # Pass 2 pointed inputs[2] at the data tensor for NeuronAdapter's DLA
+    # float32 type check; the TFLite CPU kernel validates bias shape and fails.
+    main_compiled = _restore_fc_bias_compiled(main_compiled, work_dir)
+
+    # Undo Pass-0 shape patch for PACK-only scalar tensors.
+    # Pass 0 changed scalar tensors (shape=[]) to shape=[1] for MUL legalization.
+    # PACK ops that build DYNAMIC_UPDATE_SLICE start_indices from scalars now get
+    # shape=[1] inputs → PACK output is [N,1] (2D) instead of [N] (1D) →
+    # DYNAMIC_UPDATE_SLICE NumDimensions check fails.  Restore those to shape=[].
+    main_compiled = _fix_pack_scalar_inputs(main_compiled, work_dir)
 
     # Locate / compile embedder
     compiled_v9_emb = work_dir / "compiled_v9_emb"
