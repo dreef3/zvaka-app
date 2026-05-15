@@ -98,9 +98,12 @@ def _parse_prefill_lengths(value: str) -> list[int]:
 
 def _get_compile_quantization_recipe(label: str, model_family: str) -> str | None:
     if model_family != "gemma4":
-        # weight_only keeps biases as FP32; dynamic_wi4_afp32 produces INT32 biases
-        # which both v9_0_2 and v9_0_3 NeuroPilot SDKs reject at AOT compile time.
-        return "weight_only_wi4_afp32"
+        # Pass the export-step quantized model directly to AOT without re-quantization.
+        # The weight_only_wi8_afp32 re-quantization step introduced dynamic reshape ops
+        # that v9_0_3 SDK cannot compile ("MapReshapeOps: Output shape as inputs not
+        # supported"). Use the export-step model_quantized.tflite (dynamic_wi4_afp32)
+        # directly and let v9 AOT compile it as-is.
+        return None
 
     recipe_map = {
         "prefill_decode": "weight_only_wi4_afp32",
@@ -884,8 +887,13 @@ def main() -> int:
         prefill_lengths=prefill_lengths,
         cache_length=args.cache_length,
         quantization_recipe=args.quantization_recipe,
-        split_cache=args.model_family == "gemma3",
-        externalize_embedder=args.model_family == "gemma4",
+        split_cache=False,
+        # The NPU executor expects the main LLM to take 'embeddings' (float) as
+        # input so it can share a zero-copy buffer with the embedder output.
+        # externalize_embedder=False causes the transformer to take 'tokens'
+        # (int32) instead, which breaks CreateEmbedderContextWithBufferSharing
+        # with "Cannot duplicate a non-owned tensor buffer".
+        externalize_embedder=True,
         bundle_litert_lm=False,
         experimental_lightweight_conversion=(
             args.model_family == "gemma4"
