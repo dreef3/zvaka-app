@@ -351,6 +351,88 @@ plugin before reaching NeuronAdapter.
 
 ---
 
+## Attempt 8 — 2026-05-16
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v14.litertlm` (231 MB) — built on GCP with **official**
+`build_mt6985_gemma3_litertlm.py` pipeline + `MEDIATEK_SDK_LIB_SUBDIR=v8_0_10/host/lib`.
+
+Hypothesis: the custom `aot_compile_gemma3_v9.py` pipeline (Attempt 7) produced a different DLA
+embedding format than the official pipeline. Gemma 4 E2B was built with the official pipeline and
+reached DRAM OOM (past the dispatch-plugin check). Using the same official pipeline with v8_0_10
+for Gemma 3 270M should produce compatible DLA.
+
+Build output (GCP, 2026-05-16T20:59):
+```
+compiled_mt6985/prefill_decode/model_quantized_MediaTek_MT6985_apply_plugin.tflite  (140 MB)
+compiled_mt6985/embedder/embedder_quantized_MediaTek_MT6985_apply_plugin.tflite     (86 MB)
+gemma-3-270m-it_mt6985.litertlm                                                     (231 MB)
+```
+
+Note: `.litertlm` is NOT a zip. `_apply_plugin.tflite` files contain DLA embedded as custom ops.
+
+### Error observed
+
+```
+05-16 23:02:32.990 W native  : W0000 llm_litert_npu_compiled_model_executor.cc:2559]
+    No quantization for logits in 'decode' signature (using default scale=1, zero_point=0).
+05-16 23:02:35.196 E LiteRtDietChat: sendMessage failed
+05-16 23:02:35.196 E LiteRtDietChat: com.google.ai.edge.litertlm.LiteRtLmJniException:
+    Failed to create engine: INTERNAL: ERROR:
+    [runtime/executor/llm_litert_npu_compiled_model_executor.cc:2796]
+    └ ERROR: [external/litert/litert/cc/litert_compiled_model.h:1140]
+```
+
+No `W/neuron` or `E/apusys` messages — NeuronAdapter not reached.
+
+### Root cause
+
+Same as Attempt 7. The official pipeline with `MEDIATEK_SDK_LIB_SUBDIR=v8_0_10/host/lib` still
+embeds v8_0_10 DLA format in the `_apply_plugin.tflite` files. The dispatch plugin in
+`litertlm-android:0.10.2` rejects this at `litert_compiled_model.h:1140`.
+
+### Key finding — Gemma 4 E2B / DRAM OOM revisited
+
+The prior "Gemma 4 E2B ran but didn't fit into memory" was most likely:
+- v9_0_3 DLA (dispatch accepts) → APUSys AIDL → `open("/dev/apusys")` → ENOMEM (same as v9 path above)
+- The "DRAM OOM" was the APUSys ENOMEM, not device RAM OOM
+
+This means BOTH SDK paths fail on this firmware. There is no known successful combination with
+`litertlm-android:0.10.2` on this device.
+
+### Additional investigation (same session)
+
+- `/dev/apusys`: `crw-rw-rw-` (world-writable, owner `system:camera`) — **permissions are NOT the issue**
+- The APUSys AIDL service (`vendor.mediatek.hardware.apuware.apusys.INeuronApusys/default`) is registered
+- NNAPI services registered: `mtk-mdla_shim`, `mtk-neuron_shim`
+- Querying both NNAPI services returns `FAILED_TRANSACTION` (no dump support)
+- Camera HAL (NeuronPilot 6 path) can use MDLA — hardware is functional via v6 path
+- The ENOMEM on `open("/dev/apusys")` appears to be an internal kernel driver state issue,
+  not a permission or resource-size issue
+
+### Status
+
+FAILED — **same dispatch-plugin rejection as Attempt 7**. Official pipeline does not change
+the DLA format embedded by v8_0_10 SDK.
+
+### Dead ends summary
+
+| Path | Outcome |
+|------|---------|
+| v9_0_3 DLA, any pipeline | Dispatch accepts → APUSys `open()` ENOMEM |
+| v8_0_10 DLA, custom pipeline | Dispatch rejects at `litert_compiled_model.h:1140` |
+| v8_0_10 DLA, official pipeline | Dispatch rejects at `litert_compiled_model.h:1140` |
+| v9_0_3 + `--disable-apusys` shim | APUSys ENOMEM persists |
+| neuron_shim fake-finish + v9 DLA | Dispatch accepts → APUSys ENOMEM (unchanged) |
+
+Remaining options (not yet tried):
+1. Root device to inspect `/dev/apusys open()` ENOMEM in kernel driver
+2. Downgrade `litertlm-android` to a version that accepts v8_0_10 DLA
+3. Use TFLite NNAPI delegate with `mtk-mdla_shim` (bypasses litertlm dispatch — major rework)
+
+---
+
 ## Key model facts
 
 | Item | Value |
