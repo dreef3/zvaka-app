@@ -147,9 +147,150 @@ FAILED — DLA deserialization. **v10 bundle produced and fetched.** Push pendin
 
 `gemma3-270m-it_mt6985_v10.litertlm` (246 MB, 717/717 clean AOT compiles, MUL on CPU)
 
-### Setup
+### Error observed
 
-Waiting for device to switch to WiFi before pushing 236 MB bundle.
+```
+W neuron  : APUSysEngine::createInstance() failed
+W neuron  : APUSysEngine initialization failed.
+W neuron  : Cannot create device for APUSYS_2_0
+W neuron  : Found an unsupported target: APUSYS_2_0
+W neuron  : Fail to revise dla::CompiledResult
+W neuron  : Fail to preprocess dla::CompiledGraph
+W neuron  : Fail to preprocess dla::CompiledNetwork
+W neuron  : Cannot prepare execution.
+W neuron  : Successfully open network but cannot start execution.
+W neuron  : NeuronModel_restoreFromCompiledNetwork - Failed to load compiled network from the given buffer
+W neuron  : The header of DLA is invalid
+E litert  : [dispatch_api.cc:259] Failed to create context from context binary: Failed to finish compilation
+```
+
+### Analysis
+
+The v9_0_3 (and v9_0_2) SDK always compiles DLA for MT6985 with APUSYS_2_0 as the hardware backend.
+The on-device NeuronAdapter v9.0.11 has code for both APUSYS_1_0 and APUSYS_2_0 but fails to create
+an APUSYS_2_0 device on this firmware. Both `libapuwareapusys.mtk.so` and `libapuwareapusys_v2.mtk.so`
+are present on the device but APUSysEngine init fails — likely a SELinux/HIDL restriction on MIUI.
+
+### Status
+
+FAILED — APUSYS_2_0 device creation fails on device firmware.
+
+---
+
+## Attempt 5 — 2026-05-16
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v11.litertlm` (235 MB, v9_0_2 SDK, 717/717 clean AOT compiles, MUL on CPU)
+
+### Hypothesis
+
+v9_0_2 might target APUSYS_1_0 instead of APUSYS_2_0 for MT6985, unlike v9_0_3.
+
+### Error observed
+
+Same error as Attempt 4:
+```
+W neuron  : Cannot create device for APUSYS_2_0
+W neuron  : Found an unsupported target: APUSYS_2_0
+E litert  : [dispatch_api.cc:259] Failed to create context from context binary: Failed to finish compilation
+E LiteRtDietChat: com.google.ai.edge.litertlm.LiteRtLmJniException: Failed to create engine: INTERNAL: ERROR
+```
+
+### Analysis
+
+v9_0_2 also targets APUSYS_2_0 for MT6985 — both SDK versions have the same behaviour.
+The APUSYS_2_0 target is hardcoded for MT6985 in v9_0_2 and v9_0_3.
+
+Next step: Try `--disable-apusys` NeuronAdapter compile flag to produce DLA without APUSYS backend,
+potentially targeting MDLA_3_0 directly.
+
+### Status
+
+FAILED — same APUSYS_2_0 incompatibility.
+
+---
+
+## Attempt 6 — 2026-05-16
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v12.litertlm` (236 MB, v9_0_3 SDK + `--disable-apusys` shim flag,
+717/717 clean AOT compiles, MUL on CPU)
+
+### What `--disable-apusys` changed
+
+The flag was injected in `NeuronCompilation_createWithOptions` in `tools/neuron_shim.c`. It changed
+the compiled DLA binary format enough to pass the header validation check that previously failed in
+Attempts 4/5 ("The header of DLA is invalid"). **717 subgraphs loaded and parsed successfully.**
+
+However the flag does NOT change the runtime execution target: the loaded DLA is still identified as
+APUSYS_2_0 and the runtime still tries to create an APUSys session.
+
+### Error observed
+
+```
+05-16 21:31:21.013 E/apusys  ( 1370): apusysSession_createInstance: ==============================================
+05-16 21:31:21.014 E/apusys  ( 1370): apusysSession_createInstance: | open apusys device node fail, errno(12/Out of memory)|
+05-16 21:31:21.014 E/apusys  ( 1370): apusysSession_createInstance: ==============================================
+05-16 21:31:21.014 E/neuron  (19478): APUSysEngine::createInstance() failed
+05-16 21:31:21.014 E/neuron  (19478): APUSysEngine initialization failed.
+05-16 21:31:21.014 W/neuron  (19478): Cannot create device for APUSYS_2_0
+05-16 21:31:21.014 W/neuron  (19478): Found an unsupported target: APUSYS_2_0
+05-16 21:31:21.014 W/neuron  (19478): Fail to revise dla::CompiledResult
+05-16 21:31:21.014 W/neuron  (19478): Fail to preprocess dla::CompiledGraph
+05-16 21:31:21.014 W/neuron  (19478): Fail to preprocess dla::CompiledNetwork
+05-16 21:31:21.015 E/neuron  (19478): Cannot prepare execution.
+05-16 21:31:21.015 E/neuron  (19478): Successfully open network but cannot start execution.
+05-16 21:31:21.015 E/neuron  (19478): NeuronModel_restoreFromCompiledNetwork - Failed to load compiled network
+05-16 21:31:21.017 E/neuron  (19478): The header of DLA is invalid
+05-16 21:31:21.020 E/neuron  (19478): unregistered target: NEON
+05-16 21:31:21.020 E/neuron  (19478): unregistered target: GPU
+05-16 21:31:21.021 E/neuron  (19478): PrepareTensors: Currently we can't support dynamic shape
+05-16 21:31:21.022 E/litert  (19478): [dispatch_api.cc:259] Failed to create context from context binary
+```
+
+### Root cause analysis
+
+**Error origin**: `libapu_mdw.so` in the NNAPI shim service (PID 1370, `u:r:mtk_hal_neuralnetworks:s0`,
+uid=1000/system). The MDW (Memory Dynamic Worker) calls `open("/dev/apusys", O_RDWR)` and gets
+`errno=12` (ENOMEM) from the kernel driver.
+
+**Confirmed facts**:
+- No SELinux denial logged for `mtk_hal_neuralnetworks → apusys_device` — the kernel receives the
+  `open()` but returns ENOMEM from its driver code
+- `/dev/apusys` has `crw-rw-rw- system:camera 10,114` — DAC allows all users
+- No user-space process holds `/dev/apusys` open (`lsof /dev/apusys` returns empty)
+- APU RISC-V management core IS running (`remoteproc1` exists, 11 RPMsg channels enumerated:
+  `mdla-rx/tx`, `mvpu-rx/tx`, `apu-mdw`, `apu-reviser`, `apu_top_3`, etc.)
+- `mtk_aov` (Always On Vision) uses `mtk_aie` NOT `apusys` — AOV is not competing for APUSys
+- Build type: `user` (not userdebug) → `adb root` unavailable, sysfs locked to root
+- `remoteproc1/state` is permission-denied — cannot determine RISC-V core state from shell
+
+**Architecture of device NeuronAdapter**:
+- `libneuronusdk_adapter.9.mtk.so` → binder → APUSys AIDL (`INeuronApusys`) → `libapu_mdw.so`
+  → `open("/dev/apusys")` → **ENOMEM** ← **stuck here**
+- `libneuronusdk_adapter.mtk.so` → OpenCL (`libcmdl_ndk.mtk.so`) + ARM NN (`libarmnn_ndk.mtk.so`)
+  → Mali GPU path (not MDLA/NPU)
+
+**Remaining ENOMEM hypotheses** (unconfirmed, root needed):
+1. APUSys kernel driver calls `pm_runtime_get_sync()` to power on MDLA and the power-on fails
+   (clock gating, voltage, or firmware not loaded for the MDLA domain specifically)
+2. The MDW session initialization requires an IOVA allocation that fails (IOMMU group 2 space
+   exhausted or misconfigured on this MIUI firmware)
+3. The `apusys-reviser` device (IOVA remapper in IOMMU group 2) cannot allocate a new session
+   context (fixed-size pool, or misconfigured)
+
+**What did NOT work as alternative paths**:
+- `--disable-apusys` flag (v12): fixes DLA header but APUSYS_2_0 session creation still fails
+- NEON target: "unregistered" in v9 adapter on this device
+- GPU target: "unregistered" in v9 adapter on this device
+- JIT NNAPI path: fails with dynamic shape (LLM KV-cache uses variable sequence lengths)
+- Old adapter (`libneuronusdk_adapter.mtk.so`): uses GPU/OpenCL compute, NOT MDLA NPU
+
+### Status
+
+FAILED — **ENOMEM from `/dev/apusys` kernel driver**. Root access required to diagnose further.
 
 ---
 
