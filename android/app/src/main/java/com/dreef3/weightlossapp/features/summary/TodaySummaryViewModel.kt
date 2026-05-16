@@ -56,7 +56,7 @@ data class TodaySummaryUiState(
     val lastActionMessage: String? = null,
 ) {
     val showBackgroundProcessingBanner: Boolean
-        get() = queueActiveLabel != null || queueWaitingCount > 0 || processingCount > 0
+        get() = processingCount > 0 || queuedTaskCount > 0
 }
 
 class TodaySummaryViewModel(

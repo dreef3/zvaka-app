@@ -450,7 +450,11 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
                 /* 9 = FULLY_CONNECTED excluded: FC bias patched as activation tensor
                  *   (dynamic input), MDLA rejects "bias as inputs not supported" and
                  *   makes the whole mixed subgraph fail — run FC on CPU instead. */
-                18,  /* MUL */
+                /* 18 = MUL excluded: MUL+CONCAT subgraphs (RoPE-related, nops≤3)
+                 *   pass getSupportedOperations but fail NeuronCompilation_finish with
+                 *   NoExecPlan (error 6).  Fake-success produced 0-byte DLA blobs that
+                 *   crash NeuronCompilation_restoreFromCompiledNetwork at runtime.
+                 *   Run all MUL ops on CPU instead. */
                 22,  /* RESHAPE (float; INT32 excluded by inp0 check above) */
                 25,  /* SOFTMAX */
                 31,  /* MEAN */

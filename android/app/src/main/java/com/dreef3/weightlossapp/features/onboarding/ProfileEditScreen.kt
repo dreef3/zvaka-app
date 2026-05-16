@@ -1,6 +1,7 @@
 package com.dreef3.weightlossapp.features.onboarding
 
 import android.app.Activity
+import com.dreef3.weightlossapp.BuildConfig
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row

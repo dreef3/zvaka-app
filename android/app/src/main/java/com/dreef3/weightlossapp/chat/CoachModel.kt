@@ -7,7 +7,8 @@ enum class CoachModel(
     Gemma("gemma", "Gemma"),
     GemmaGguf("gemma_gguf", "Gemma GGUF"),
     Qwen("qwen", "Qwen"),
-    Gemma3Mt6989("gemma3_mt6989", "Gemma3 mt6989");
+    Gemma3Mt6989("gemma3_mt6989", "Gemma3 mt6989"),
+    Gemma3Mt6985("gemma3_mt6985", "Gemma3 270M NPU (MT6985)");
 
     companion object {
         fun fromStorageKey(value: String?): CoachModel =

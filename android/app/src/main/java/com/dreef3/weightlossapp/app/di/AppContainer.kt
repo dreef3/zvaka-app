@@ -171,6 +171,13 @@ class AppContainer private constructor(context: Context) {
         backendPreferenceProvider = preferences::readGemmaBackend,
         nativeLibraryDir = nativeLibraryDir,
     )
+    val gemma3Mt6985DietChatEngine: DietChatEngine = LiteRtDietChatEngine(
+        modelFile = modelStorage.fileFor(ModelDescriptors.gemma3Mt6985Coach),
+        correctionService = dietEntryCorrectionService,
+        inspectionService = dietEntryInspectionService,
+        backendPreferenceProvider = preferences::readGemmaBackend,
+        nativeLibraryDir = nativeLibraryDir,
+    )
     private val rawSelectedCoachNpuSmokeTestEngine: DietChatEngine = object : DietChatEngine {
         override suspend fun sendMessage(
             message: String,
@@ -194,6 +201,7 @@ class AppContainer private constructor(context: Context) {
         gemmaGgufEngine = gemmaGgufDietChatEngine,
         qwenEngine = qwenDietChatEngine,
         gemma3Mt6989Engine = gemma3Mt6989DietChatEngine,
+        gemma3Mt6985Engine = gemma3Mt6985DietChatEngine,
     )
     val dietChatEngine: DietChatEngine = rawDietChatEngine
 

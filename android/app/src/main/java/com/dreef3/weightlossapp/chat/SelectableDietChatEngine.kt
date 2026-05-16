@@ -8,6 +8,7 @@ class SelectableDietChatEngine(
     private val gemmaGgufEngine: DietChatEngine,
     private val qwenEngine: DietChatEngine,
     private val gemma3Mt6989Engine: DietChatEngine,
+    private val gemma3Mt6985Engine: DietChatEngine,
 ) : DietChatEngine {
     override suspend fun sendMessage(
         message: String,
@@ -20,6 +21,7 @@ class SelectableDietChatEngine(
             CoachModel.GemmaGguf -> gemmaGgufEngine
             CoachModel.Qwen -> qwenEngine
             CoachModel.Gemma3Mt6989 -> gemma3Mt6989Engine
+            CoachModel.Gemma3Mt6985 -> gemma3Mt6985Engine
         }
         return engine.sendMessage(message, history, snapshot)
     }

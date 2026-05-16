@@ -49,6 +49,14 @@ object ModelDescriptors {
         uniqueWorkName = "model-download-gemma3-mt6989-coach",
     )
 
+    val gemma3Mt6985Coach = ModelDescriptor(
+        fileName = "gemma-3-270m-it_mt6985.litertlm",
+        displayName = "Gemma3 270M NPU (MT6985)",
+        url = "",
+        totalBytes = 243_712_000L,
+        uniqueWorkName = "model-download-gemma3-mt6985-coach",
+    )
+
     val smolVlmTflite = ModelDescriptor(
         fileName = "smalvlm-256m-instruct_q8_ekv2048_single_image.tflite",
         displayName = "SmolVLM 256M",
