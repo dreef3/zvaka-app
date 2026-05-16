@@ -294,6 +294,63 @@ FAILED — **ENOMEM from `/dev/apusys` kernel driver**. Root access required to 
 
 ---
 
+## Attempt 7 — 2026-05-16
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v13.litertlm` (231 MB, v8_0_10 SDK, 717/717 clean AOT compiles,
+MUL on CPU, no `--disable-apusys`)
+
+### Hypothesis
+
+v8_0_10 is the "correct" SDK for this device's NeuroPilot 6.0.3 runtime. Previous Gemma 4 E2B
+attempts with v8_0_10 showed APUSys opening successfully (failing later on DRAM OOM, not on
+`open("/dev/apusys")`). Gemma 3 is 10× smaller, so DRAM OOM unlikely.
+
+### Error observed
+
+```
+05-16 22:47:48.887 D/LiteRtDietChat(19478): sendMessage start message=Reply with exactly OK.
+05-16 22:47:48.889 D/LiteRtDietChat(19478): prompt built chars=183
+05-16 22:47:51.074 E/LiteRtDietChat(19478): sendMessage failed
+05-16 22:47:51.074 E/LiteRtDietChat(19478): com.google.ai.edge.litertlm.LiteRtLmJniException:
+    Failed to create engine: INTERNAL: ERROR:
+    [runtime/executor/llm_litert_npu_compiled_model_executor.cc:2796]
+    └ ERROR: [external/litert/litert/cc/litert_compiled_model.h:1140]
+```
+
+No `W/neuron` or `E/apusys` messages — NeuronAdapter was never reached.
+
+### Root cause
+
+The LiteRT dispatch plugin (`libLiteRtDispatch_MediaTek.so`, from `litertlm-android:0.10.2`)
+validates the DLA format at load time. v8_0_10 DLA format is rejected at
+`litert_compiled_model.h:1140` before NeuronAdapter is called. The dispatch plugin in
+litertlm 0.10.2 requires v9 DLA format (from v9_0_x SDK).
+
+### Architecture insight
+
+Two incompatible constraints:
+
+| SDK | DLA loads? | APUSys succeeds? |
+|-----|-----------|-----------------|
+| v9_0_3 | ✓ (dispatch plugin accepts) | ✗ (ENOMEM from /dev/apusys) |
+| v8_0_10 | ✗ (dispatch plugin rejects at litert_compiled_model.h) | n/a |
+
+**The dispatch plugin (from litertlm 0.10.2) requires v9 DLA, but the device's v9 NeuronAdapter
+triggers APUSYS_2_0 session creation which fails with ENOMEM on this MIUI firmware.**
+
+Additional observation: PID 1424 (Camera HAL AINR) successfully uses MDLA via NeuroPilot 6
+(`neuron_sdk_version 6`, `NrCore: set MDLA Core Option = single`) — the hardware IS functional,
+but through a Camera HAL–specific code path (NeuronRuntime, not LiteRT dispatch).
+
+### Status
+
+FAILED — **dispatch plugin/DLA format mismatch**. v8 DLA rejected by litertlm 0.10.2 dispatch
+plugin before reaching NeuronAdapter.
+
+---
+
 ## Key model facts
 
 | Item | Value |
