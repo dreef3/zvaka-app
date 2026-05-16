@@ -287,22 +287,10 @@ int NeuronCompilation_create(NeuronModel *model, NeuronCompilation **compilation
 int NeuronCompilation_createWithOptions(NeuronModel *model,
                                          NeuronCompilation **compilation,
                                          const char  *options) {
-    /* Append --disable-apusys to force MDLA direct execution instead of APUSYS_2_0.
-     * APUSYS_2_0 is hardcoded for MT6985 in v9_0_x SDKs but fails on this device's
-     * firmware (SELinux/HIDL restriction on HyperOS/MIUI). */
-    char patched_opts[4096];
-    const char *extra = " --disable-apusys";
-    if (options && strlen(options) + strlen(extra) + 1 < sizeof(patched_opts)) {
-        snprintf(patched_opts, sizeof(patched_opts), "%s%s", options, extra);
-    } else if (!options) {
-        snprintf(patched_opts, sizeof(patched_opts), "%s", extra + 1); /* skip leading space */
-    } else {
-        snprintf(patched_opts, sizeof(patched_opts), "%s", options); /* fallback: too long */
-    }
     fprintf(stderr, "[neuron_shim] createWithOptions model=%p opts=%s\n",
-            (void *)model, patched_opts);
+            (void *)model, options ? options : "(null)");
     int rc = real_NeuronCompilation_createWithOptions
-             ? real_NeuronCompilation_createWithOptions(model, compilation, patched_opts)
+             ? real_NeuronCompilation_createWithOptions(model, compilation, options)
              : -1;
     if (rc == 0 && compilation && *compilation) {
         comp_register(*compilation, model);
