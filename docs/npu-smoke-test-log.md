@@ -433,6 +433,331 @@ Remaining options (not yet tried):
 
 ---
 
+## Attempt 9 — 2026-05-17
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v9.litertlm` in app cache (v9_0_3 DLA, 717/717 subgraphs)
+
+### Dispatch plugin
+
+`libLiteRtDispatch_MediaTek.so` **v12** — rebuilt from LiteRT source (commit 472d1c0f) with:
+- Adapter load order restored: `libneuronusdk_adapter.mtk.so` first, `libneuron_adapter_mgvi.so` second,
+  `libneuron_adapter.so` third — **no v9 adapter** in list
+- `break` on first successful load (reverted f817522's last-winner behavior)
+
+This ensures **base adapter (v8.2.26 / NeuroPilot 6.0.6)** wins instead of v9 adapter.
+
+### Logcat
+
+17:03:04:50 — Partition enumeration: 717 `Found graph: Partition_N` entries logged in < 1s.  
+17:03:05:08 — `Neuron AIDL client callback(pid: 22828) died` (logged when app was force-stopped at 03:23).
+
+### Analysis
+
+Logcat buffer was saturated by 207K+ `Found graph: Partition_N` log lines. The test result
+(pass/fail) was overwritten before the session ended. The AIDL callback dying when force-stopped
+confirms the base adapter DID establish an AIDL connection to the APUSys server during this run.
+The connection persisted for ~18 minutes (03:04:50 → 03:23:08), suggesting either:
+- 717 × ~1.5s ≈ 18 min of NeuronModel_restoreFromCompiledNetwork calls that eventually failed
+- Or the first subgraph was stuck in the APUSys server for the full duration
+
+### Status
+
+INCONCLUSIVE — logcat saturated. Result recovered from Attempt 10 (same config, clean run).
+
+---
+
+## Attempt 10 — 2026-05-17
+
+### Bundle
+
+Same as Attempt 9: `gemma3-270m-it_mt6985_v9.litertlm` in app cache.  
+Triggered via `am start --ez runCoachNpuSmokeTest true` after force-stopping app for clean process.
+
+### Dispatch + adapter
+
+v12 dispatch plugin, base adapter: `libneuronusdk_adapter.mtk.so` loaded, `Neuron api version: 8.2.26`.
+
+### Error observed (complete)
+
+```
+03:23:19 I/litert  (27692): [neuron_adapter_api.cc:136] Loading MediaTek NeuronAdapter .so from: libneuronusdk_adapter.mtk.so
+03:23:19 I/litert  (27692): [neuron_adapter_api.cc:147] Loaded NeuronAdapter shared library.
+03:23:19 I/litert  (27692): [neuron_adapter_api.cc:212] NeuronAdapter symbols loaded
+03:23:19 I/litert  (27692): [neuron_adapter_api.cc:269] Neuron api version: 8.2.26
+03:23:19 E/apuware_hidl(27692): check utils aidl service fail
+03:23:19 E/apuware_hidl(27692): HidlNeuronClient can't get INeuronApusys2 service (tried 3 times)
+03:23:19 I/apuware_hidl(27692): AidlNeuronClient get aidl version=1
+03:23:19 I/apuware_hidl(27692): run apuys aidl
+03:23:33 E/apuware_server( 1370): createInstance failed
+03:23:33 E/apuware_hidl(27692): AidlNeuronClient session_createInstance fail
+03:23:33 E/neuron  (27692): APUSysEngine::createInstance() failed
+03:23:33 E/neuron  (27692): APUSysEngine initialization failed.
+03:23:33 W/neuron  (27692): Cannot create device for APUSYS_2_0
+03:23:33 W/neuron  (27692): Cannot create device for EDMA_3_6
+03:23:33 W/neuron  (27692): Found an unsupported target: EDMA_3_6
+03:23:33 W/neuron  (27692): Fail to revise dla::CompiledResult
+03:23:33 W/neuron  (27692): Fail to preprocess dla::CompiledGraph
+03:23:33 W/neuron  (27692): Fail to preprocess dla::CompiledNetwork
+03:23:33 E/neuron  (27692): Cannot prepare execution.
+03:23:33 E/neuron  (27692): Successfully open network but cannot start execution.
+03:23:33 E/neuron  (27692): NeuronModel_restoreFromCompiledNetwork - Failed to load compiled network from the given buffer
+03:23:33 E/neuron  (27692): The header of DLA is invalid
+03:23:33 E/neuron  (27692): PrepareTensors: Currently we can't support dynamic shape
+03:23:36 E/MainActivity(27692): Coach NPU smoke test failed
+03:23:36 E/MainActivity(27692): com.google.ai.edge.litertlm.LiteRtLmJniException: Failed to create engine: INTERNAL: ERROR:
+   [runtime/executor/llm_litert_npu_compiled_model_executor.cc:2796]
+   └ ERROR: [external/litert/litert/cc/litert_compiled_model.h:1140]
+```
+
+### Analysis
+
+The v12 dispatch correctly loads the **base adapter** (v8.2.26). NeuronAdapter IS reached (W/neuron
+messages appear) — unlike Attempts 7/8 where v8_0_10 DLA was rejected before NeuronAdapter.
+
+The base adapter uses:
+1. HIDL `INeuronApusys2` (v2.1) — not found in VINTF manifest → skipped
+2. AIDL `INeuronApusys` (v1) — found, `aidl version=1`
+3. Calls `session_createInstance` for **APUSYS_2_0** target
+4. APUSys server (PID 1370) returns `createInstance failed`
+5. `Cannot create device for APUSYS_2_0` — same root cause as Attempts 4/5/6 with v9 adapter
+
+The v9_0_3 DLA embeds APUSYS_2_0 + EDMA_3_6 as the hardware target. Neither the v9 adapter
+(Attempts 4-6) nor the base adapter (Attempt 10) can create an APUSYS_2_0 session on this
+device firmware (HyperOS 3.0.4).
+
+**New finding**: The base adapter's AIDL v1 path fails with `createInstance failed` (server-side
+rejection), while the v9 adapter's path fails with `open(/dev/apusys) ENOMEM` (kernel driver).
+Both trace to the same root: APUSYS_2_0 device creation is blocked on this firmware.
+
+**Updated dead ends table**:
+
+| Path | Dispatch | Adapter | Outcome |
+|------|----------|---------|---------|
+| v9_0_3 DLA | Old (v9 wins) | v9 (9.0.11) | APUSys `open()` ENOMEM |
+| v8_0_10 DLA | Old (v9 wins) | v9 (9.0.11) | Dispatch rejects at litert_compiled_model.h:1140 |
+| v8_0_10 DLA, official pipeline | Old (v9 wins) | v9 (9.0.11) | Same dispatch rejection |
+| v9_0_3 + `--disable-apusys` shim | Old (v9 wins) | v9 (9.0.11) | APUSys ENOMEM persists |
+| v9_0_3 DLA | v12 (base first) | base (8.2.26) | APUSys AIDL `createInstance failed` (APUSYS_2_0) |
+
+### Status
+
+FAILED — **APUSYS_2_0 session creation rejected by APUSys AIDL server** on this firmware.
+
+---
+
+## Attempt 11 — 2026-05-17
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v9.litertlm` in app cache (v9_0_3 DLA, 717/717 subgraphs)
+
+### Dispatch plugin
+
+`libLiteRtDispatch_MediaTek.so` **v7 (lazy-import, resolve_symbols_in_exec=true bug)** — source rebuild
+from LiteRT commit 472d1c0f:
+- Strides check removed (`tensor_type.layout.has_strides = false`)
+- Lazy-import pattern: `AttachInput`/`AttachOutput` deferred to `Invoke()`, NeuronExecution recreated
+  after each partition compute to release APUSys device-VA imports
+
+### Error
+
+```
+SIGABRT at DispatchDelegate::CreateDelegateKernelInterface()+316
+```
+
+### Root cause
+
+`.bazelrc` unconditionally sets `--define=resolve_symbols_in_exec=true`, which leaves
+`NeuronAdapterApi::Create` as an unresolved UND import. `RTLD_NOW` at dlopen time fails →
+`has_dispatch_runtime_=false` → `LITERT_FATAL` → abort().
+
+### Fix applied
+
+Rebuilt dispatch plugin with `--define=resolve_symbols_in_exec=false` (dispatch v9, 611KB).
+`NeuronAdapterApi::Create` now compiled in; `libLiteRt.so` appears in NEEDED with `@VERS_1.0`
+versioned symbol references.
+
+### Status
+
+FAILED (SIGABRT). Fix → Attempt 12.
+
+---
+
+## Attempt 12 — 2026-05-17
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v9.litertlm` in app cache (v9_0_3 DLA, 717/717 subgraphs)
+
+### Dispatch plugin
+
+**v9** (resolve_symbols_in_exec=false, lazy-import, strides check removed)  
+Base adapter wins: `libneuronusdk_adapter.mtk.so` (v8.2.26)
+
+### Error
+
+```
+E/neuron: Fail to deserialize compiled network  
+E/litert: [dispatch_api.cc:259] Failed to create context from context binary: Failed to finish compilation
+```
+
+### Root cause
+
+DLA format mismatch: v9_0_3 SDK produces **V245303** DLA bytecode, base adapter (NeuroPilot 6.0.6)
+expects **V222104**. The `.9.mtk.so` (v9) adapter is gated behind `GetNeuroPilotMagicNumber()` which
+SELinux blocks on MIUI, returning -1. v9 adapter never loaded.
+
+### Fix applied
+
+Modified `neuron_adapter_api.cc` to unconditionally add `libneuronusdk_adapter.9.mtk.so` last in the
+load list (last-winner loop). Rebuilt as dispatch v11. v9 adapter (9.0.11) now always wins.
+
+### Status
+
+FAILED (DLA format). Fix → Attempt 13.
+
+---
+
+## Attempt 13 — 2026-05-17
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v9.litertlm` in app cache (v9_0_3 DLA, 717/717 subgraphs)
+
+### Dispatch plugin
+
+**v11** (v9 adapter unconditional: `.9.mtk.so` last-winner)
+
+### Error
+
+```
+E memImportV1: Failed to import buffer using ION — errno=12
+```
+
+The v9 adapter (9.0.11) DID load and the DLA format was accepted. However tensor buffer import
+via `NeuronExecution_setInputFromMemory` / `setOutputFromMemory` (ION-based) failed.
+
+### Root cause
+
+MT6985 kernel 5.15 (Android 14) removed `/dev/ion`. The base `NeuronExecution_setInput/Output`
+APIs use ION handles internally; without ION they fail with ENOMEM/errno=12.
+
+### Fix applied
+
+Switched to AHWB host-ptr path: `AHardwareBuffer_allocate` + `AHardwareBuffer_lock` +
+`NeuronExecution_setInput` (value copy into AHardwareBuffer) instead of ION-based memory import.
+Source change in `litert_dispatch_invocation_context.cc`.
+
+### Status
+
+FAILED (ION buffer import). Fix → Attempt 14.
+
+---
+
+## Attempt 14 — 2026-05-17
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v9.litertlm` (v9_0_3 DLA, 717/717 subgraphs, AOT + `import_forever: true`)
+
+### Dispatch plugin
+
+v11 + AHWB host-ptr buffer path
+
+### Error
+
+None at DLA load stage. 249 DLA subgraphs (`NeuronModel_restoreFromCompiledNetwork`) restored
+successfully. First `RegisterTensorBuffer` for I/O tensor fails:
+
+```
+E apusys: memMapDeviceVa: map mem(2933/0) fail(Out of memory)
+```
+
+~5 MB I/O buffer fails device-VA import.
+
+### Root cause
+
+The AOT-compiled DLA embeds `import_forever: true` in compilation options, which causes all 249
+subgraph model internals to be permanently held in APUSys device-VA space (total ~16 MB pool).
+When `RegisterTensorBuffer` tries to import the inference I/O buffer (~5 MB), there is no space
+left in the device-VA pool.
+
+### Fix applied
+
+- Removed `import_forever: true` from `kDefaultAotCompilationOptions` in `neuron_adapter_api.h`
+  (set to `""`)
+- Force JIT path (`LoadFromDlaBytecode`) in `LoadModelAndCompilation` in
+  `litert_dispatch_invocation_context.cc` so model internals are compiled and released
+  per-inference rather than held permanently from the AOT blob
+
+Added diagnostic logging:
+- `__attribute__((constructor))` that calls `__android_log_print` on dlopen
+- `[MTK-DIAG]` logs at `LiteRtDispatchGetApi`, `LiteRtInitialize` entry, `NeuronAdapterApi::Create` failure
+
+Rebuild → Attempt 15 / 17.
+
+### Status
+
+FAILED (APUSys device-VA OOM at I/O buffer registration). Fix → Attempt 17.
+
+---
+
+## Attempt 17 — 2026-05-17
+
+### Bundle
+
+`gemma3-270m-it_mt6985_v9.litertlm` (v9_0_3 DLA, 717/717 subgraphs)
+
+### Dispatch plugin
+
+Rebuilt from source with:
+- `kDefaultAotCompilationOptions = ""` (import_forever removed)
+- `LoadModelAndCompilation` forced to `LoadFromDlaBytecode` (JIT path)
+- Diagnostic code: `OnLibraryLoaded()` constructor, `[MTK-DIAG]` logs
+- Built **without** `--define=resolve_symbols_in_exec=false` (regression from omitting the flag)
+
+### Error
+
+```
+I litert  : [litert_dispatch.cc:145] Loading shared library: .../libLiteRtDispatch_MediaTek.so
+E litert  : [dispatch_delegate.cc:115] Failed to initialize Dispatch API: ERROR: [dispatch_delegate.cc:176]
+E litert  : [dispatch_delegate.cc:130] Failed to create a dispatch delegate kernel: No usable Dispatch runtime found
+```
+
+No `MTKDispatch: dlopen SUCCEEDED` or `[MTK-DIAG]` logs appeared → `__attribute__((constructor))`
+never executed → **dlopen itself failed**.
+
+### Root cause
+
+The rebuild omitted `--define=resolve_symbols_in_exec=false`. The `.bazelrc` default is
+`resolve_symbols_in_exec=true`, so `litert_runtime_c_api_shared_lib` had empty srcs, and
+`libLiteRt.so` was NOT added to the dispatch .so's NEEDED list.
+
+Without `libLiteRt.so` in NEEDED, the 11 `LiteRt*` UND symbols cannot be resolved at RTLD_NOW
+time on Android's isolated ClassLoader namespace (`clns-10`), even though `libLiteRt.so` is
+already loaded in that namespace. RTLD_NOW requires all UND symbols to be in NEEDED.
+
+The working Attempt 14 build had `libLiteRt.so` in NEEDED with versioned `@VERS_1.0` references.
+The Attempt 17 rebuild lost this dependency.
+
+### Fix applied
+
+`patchelf --add-needed libLiteRt.so libLiteRtDispatch_MediaTek.so`
+
+All 11 `LiteRt*` symbols exported from `libLiteRt.so` as `@@VERS_1.0` (default version) — unversioned
+UND references resolve correctly against default-versioned exports.
+
+**For future rebuilds**: always pass `--define=resolve_symbols_in_exec=false` to Bazel when building
+the MediaTek dispatch plugin.
+
+### Status
+
+PENDING — patched .so built; device offline. Awaiting reinstall and smoke test.
+
+---
+
 ## Key model facts
 
 | Item | Value |
