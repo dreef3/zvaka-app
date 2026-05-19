@@ -1025,7 +1025,7 @@ import_forever is active.
 
 ---
 
-## Attempt 26 — 2026-05-19 (IN PROGRESS)
+## Attempt 26 — 2026-05-19
 
 ### Bundle
 
@@ -1035,23 +1035,71 @@ import_forever is active.
 
 Fresh NeuronCompilation without `import_forever`. After `model_restore_from_compiled_network`
 (required for V230703 format), immediately discard the resulting compilation and create a new
-one via `NeuronCompilation_createWithOptions(model, &compilation, "")` — empty options string
-means no `import_forever`. Call `NeuronCompilation_finish` on the new compilation.
-
-Rationale: If `model_restore_from_compiled_network` leaves the model in an already-compiled
-state (pre-loaded DLA bytecode), the fresh `compilation_finish` should return quickly using the
-embedded DLA without `import_forever`. With import_forever gone, APUSys device-VA pool has ~16
-MB free for I/O buffers. Combined with Attempt 25's AHWB host-pointer path.
-
-Falls back to the cached (import_forever) compilation if `compilation_create_with_options` or
-`compilation_finish` fails.
-
-Logs `[MTK-DIAG] Att26: fresh compilation OK` on success or `compilation_finish failed
-result=<n>` on fallback.
+one via `NeuronCompilation_createWithOptions(model, &compilation, "")`.
 
 ### Status
 
-IN PROGRESS — build succeeded (2026-05-19). Awaiting device reconnect for install.
+FAILED — `compilation_finish` returns result=4 on a model restored from compiled network.
+A restored NeuronModel has NO graph ops; it is a wrapper around the pre-compiled DLA and
+cannot be re-compiled with new options. Cannot remove import_forever via this API path.
+
+---
+
+## Attempt 27 — 2026-05-19
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, same as Attempts 21–26)
+
+### Dispatch plugin
+
+`LoadFromDlaBytecode` path: builds a NeuronModel with the `com.mediatek.compiled_network`
+extension operand, then calls `compilation_create_with_options("")` + `compilation_finish`.
+The extension op loads the DLA via compilation_finish (not restore), so import_forever from
+the DLA metadata can be overridden with an empty options string.
+Falls back to `LoadFromCachedNetwork` (import_forever restore) if extension fails.
+
+### Status
+
+FAILED — `model_get_extension_operand_type("com.mediatek.compiled_network")` returns error
+on NeuronAdapter 8.2.26; the extension is not supported on this adapter version. Falls back
+to import_forever path immediately. Extension path requires NeuronAdapter ≥ 8.x with MTK
+runtime that exposes `com.mediatek.compiled_network`.
+
+---
+
+## Attempt 28 — 2026-05-19
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, same as Attempts 21–27)
+
+### Dispatch plugin
+
+AHWB-NeuronMemory path: `memory_create_from_ahwb(ahwb, &neuron_memory)` creates a
+NeuronMemory backed by the gralloc AHWB. At inference time uses
+`execution_set_input_from_memory(neuron_memory, offset, size)`.
+
+Hypothesis: `NeuronMemory_createFromAHardwareBuffer` uses APUSys's native AHWB import
+path (gralloc-registered buffers), bypassing the `session_memImportV1` IOMMU restriction
+that rejects all heap-allocated DMA-BUF fds (system, system-uncached, SAPU). Even with
+import_forever active in the DLA, the AHWB NeuronMemory registration does not require
+new device-VA — APUSys has a separate gralloc buffer table.
+
+Previously untried combination: all earlier attempts used either
+- host_ptr + execution_set_input (V2 path, fails: memGetInfoFromHostPtr returns fd=0)
+- DMA-BUF fd NeuronMemory + execution_set_input_from_memory (V1 path, fails: IOMMU rejects)
+
+This attempt uses AHWB NeuronMemory + execution_set_input_from_memory (gralloc path).
+
+Logs `[MTK-DIAG] Att28: AHWB neuron_mem=<ptr> size=<n> off=<n>` at registration and
+`[MTK-DIAG] Att28: execution_set_input_from_memory idx=<n> result=<n>` on failure.
+
+SDK: `gemma3-270m-it_mt6985_v9.litertlm` (NA 8.2.26, NeuroPilot 6.0.3)
+
+### Status
+
+IN PROGRESS
 
 ---
 
