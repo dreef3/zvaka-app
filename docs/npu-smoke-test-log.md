@@ -754,7 +754,304 @@ the MediaTek dispatch plugin.
 
 ### Status
 
-PENDING — patched .so built; device offline. Awaiting reinstall and smoke test.
+FAILED (dlopen: libLiteRt.so missing from NEEDED — same root cause as Attempt 17).
+Patchelf fix from f240eab restored NEEDED, then tested as Attempt 18.
+
+---
+
+## Attempt 18 — 2026-05-17
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, V230703 DLA, 249 subgraphs, import_forever: true)
+
+### Dispatch plugin
+
+Patchelf'd .so from f240eab (libLiteRt.so in NEEDED via patchelf, LoadFromDlaBytecode forced).
+
+### Error
+
+```
+E MTKDispatch: libLiteRtDispatch_MediaTek.so: dlopen SUCCEEDED
+I litert  : Neuron api version: 8.2.26
+I litert  : There are 249 subgraphs in the bytecode
+E neuron  : The header of DLA is invalid
+E neuron  : NeuronModel_restoreFromCompiledNetwork - Failed to load compiled network
+E litert  : Failed to create context from context binary: Failed to finish compilation
+```
+
+### Root cause
+
+`LoadFromDlaBytecode` (com.mediatek.compiled_network extension) fails for V230703 DLA format.
+The base adapter (v8.2.26) only accepts V230703 via `model_restore_from_compiled_network` directly,
+not via the extension mechanism. Fix → Attempt 19.
+
+### Status
+
+FAILED (DLA header invalid via extension path). Fix → Attempt 19.
+
+---
+
+## Attempt 19 — 2026-05-17
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, V230703 DLA, 249 subgraphs, import_forever: true)
+
+### Dispatch plugin
+
+Rebuilt with:
+- `LoadModelAndCompilation` restored to `LoadFromCachedNetwork` (AOT restore path)
+- `--define=resolve_symbols_in_exec=false` (libLiteRt.so in NEEDED via build flag, no patchelf)
+- Diagnostic logs retained
+
+### Result
+
+dlopen SUCCEEDED. 249 subgraphs loaded. NPU delegate applied to 122/243 nodes (3 partitions).
+`AHardwareBuffer_lock` succeeded → registered host_ptr for I/O buffers.
+No `memMapDeviceVa: Out of memory` — import_forever OOM did NOT recur (host-ptr path avoids
+APUSys device-VA mapping at registration time). However inference invocation failed:
+
+```
+E apuware_hidl: mmap failed sharedFd = 0, size = 5242880: No such device
+E neuron  : APUSys failed to allocate data buffer: size = 5242880, alignment = 256 for handle 13
+E neuron  : HintFrontendBuffer() failed on input #1, buffer addr = 0x71545b1000
+E litert  : Failed to attach input: Failed to set execution input from host ptr
+E tflite  : Node number 256 (DELEGATE) failed to invoke.
+```
+
+### Root cause
+
+`NeuronExecution_setInput` with a host pointer calls `apusysSession_memGetInfoFromHostPtr`
+internally. This function only tracks APUSys-internal allocations; for externally-allocated
+AHWBs it returns sharedFd=0 (stdin fd), causing mmap to fail with ENXIO. APUSys V2 then
+tries to allocate its own 5 MB buffer, which also fails (resources exhausted).
+
+### Fix applied
+
+Changed `RegisterTensorBuffer` (AHWB case) to always use `NeuronMemory_createFromAHardwareBuffer`
++ `NeuronExecution_setInputFromMemory` (NeuronMemory path). This carries the real DMA-BUF fd
+extracted from the AHWB and imports via APUSys HIDL (DMA-BUF, not ION). Rebuilt as Attempt 20.
+
+### Status
+
+FAILED (AttachInput: host ptr sharedFd=0 → mmap ENXIO). Fix → Attempt 20.
+
+---
+
+## Attempt 20 — 2026-05-17
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, V230703 DLA, 249 subgraphs, import_forever: true)
+
+### Dispatch plugin
+
+Rebuilt with `memory_create_from_ahwb` → `execution_set_input_from_memory` path (NeuronMemory
+carries real DMA-BUF fd; no host-ptr / apusysSession_memGetInfoFromHostPtr dependency).
+
+### Status
+
+FAILED — `E apuware_hidl: session_memImportV1 fail` at 13:30:11 (PID 21040).
+
+`NeuronMemory_createFromAHardwareBuffer` succeeds (lazy import), but
+`NeuronExecution_setInputFromMemory` triggers `apusysSession_memImportV1` on the
+AHWB's DMA-BUF (from `mtk_mm` heap). APUSys rejects `mtk_mm` heap buffers — this
+heap is for multimedia (GPU/display) and is not importable by the APU hardware
+under this device's APUSys HAL. The import call returns an error, not ENOMEM
+(no explicit ENOMEM log unlike Attempt 14). Fix → Attempt 21.
+
+---
+
+## Attempt 21 — 2026-05-17
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, V230703 DLA, 249 subgraphs, import_forever: true)
+
+### Dispatch plugin
+
+System-heap copy-through. `RegisterTensorBuffer(AHWB)` allocates a DMA-BUF from
+`/dev/dma_heap/system` (generic Linux DMA-BUF heap; APUSys should accept it), then
+imports it via `NeuronMemory_createFromFd`.
+
+- `AttachInput`: `AHardwareBuffer_lock` → `memcpy(AHWB→sys_heap)` → `AHardwareBuffer_unlock`
+  → `NeuronExecution_setInputFromMemory` with sys-heap NeuronMemory.
+- `AttachOutput`: `NeuronExecution_setOutputFromMemory` with sys-heap NeuronMemory.
+- `DetachOutput`: `AHardwareBuffer_lock` → `memcpy(sys_heap→AHWB)` → unlock.
+
+Logs `[MTK-DIAG] Sys-heap import OK fd=…` on success or `Sys-heap NeuronMemory import
+failed result=…` on failure (falls back to direct AHWB import which also fails).
+
+### Status
+
+FAILED — `session_memImportV1 fail` persists even with sys-heap fd.
+
+`NeuronMemory_createFromFd` returns `NEURON_NO_ERROR` (logged as "Sys-heap import OK") but
+`NeuronExecution_setInputFromMemory` → APUSys AIDL `session_memImportV1` still rejects the
+buffer at execution time (~4 seconds later). Root cause: `/dev/dma_heap/system` allocates
+**cached** pages. APUSys AIDL cannot import cached DMA-BUFs because the APU DMA engine lacks
+CPU cache-coherency access — the IOMMU mapping step fails. Fix → Attempt 22.
+
+---
+
+## Attempt 22 — 2026-05-17
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, same as Attempt 21)
+
+### Dispatch plugin
+
+Same sys-heap copy-through architecture as Attempt 21, but heap changed from
+`/dev/dma_heap/system` (cached) to `/dev/dma_heap/system-uncached`.
+
+Rationale: `system-uncached` heap bypasses CPU cache entirely (write-combine). APU DMA
+engine can read/write DRAM directly without cache coherency coordination — `session_memImportV1`
+IOMMU mapping should succeed. CPU `memcpy` in `AttachInput`/`DetachOutput` still works
+correctly since uncached writes go straight to DRAM and APU reads fresh DRAM values.
+
+Logs `[MTK-DIAG] Sys-uncached import OK fd=…` on success.
+
+### Build note
+
+`--linkopt=-Wl,--no-as-needed` alone is insufficient — Bazel's `resolve_symbols_in_exec=true`
+default still drops `libLiteRt.so` from the NEEDED section. Patched post-build with:
+```
+patchelf --add-needed libLiteRt.so libLiteRtDispatch_MediaTek.so
+```
+
+### Status
+
+FAILED — `session_memImportV1 fail` persists even with `system-uncached` heap.
+
+`NeuronMemory_createFromFd` returns OK (logged "Sys-uncached import OK") but at execution time
+`NeuronExecution_setInputFromMemory` → `session_memImportV1` still fails. Root cause:
+`session_memImportV1` (V1 APUSys path) cannot import ANY external DMA-BUF heap including
+`system-uncached`. Fix → Attempt 23: bypass `setInputFromMemory` entirely; use
+`NeuronExecution_setInput/setOutput` (raw host pointer → V2 `apusysSession_memGetInfoFromHostPtr`
+path) with the mmap'd sys-uncached buffer pointer.
+
+(PID 19189 also crashed at dispatch init because `libLiteRt.so` was missing from NEEDED —
+patchelf step was added after that run; PID 20292 was the Attempt 22 run that got furthest.)
+
+---
+
+## Attempt 23 — 2026-05-17
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, same as Attempts 21–22)
+
+### Dispatch plugin
+
+Same sys-uncached allocation as Attempt 22, but `AttachInput`/`AttachOutput` now call
+`NeuronExecution_setInput/setOutput` (raw host VA of the mmap'd sys-uncached buffer) instead
+of `setInputFromMemory/setOutputFromMemory`. This bypasses `session_memImportV1` (V1 path)
+and uses the V2 path (`apusysSession_memGetInfoFromHostPtr`) inside the NeuronAdapter.
+
+- `AttachInput`: AHWB lock → `memcpy(AHWB→sys_heap)` → unlock → `execution_set_input(sys_heap_ptr, size)`
+- `AttachOutput`: `execution_set_output(sys_heap_ptr, size)` (NeuronAdapter writes output here)
+- `DetachOutput`: AHWB lock → `memcpy(sys_heap→AHWB)` → unlock
+
+NeuronMemory (from `NeuronMemory_createFromFd`) is still created but no longer passed to
+`set[Input|Output]FromMemory`.
+
+### Status
+
+FAILED — `mmap failed sharedFd=0` (V2 path returns fd=0 for sys-uncached VA).
+
+`NeuronExecution_setInput` sends the mmap'd `sys-uncached` ptr to APUSys V2 path
+(`memGetInfoFromHostPtr`). APUSys returned `sharedFd=0` for that VA, meaning it is NOT in
+APUSys's internal VA table. APUSys then tried to allocate an internal 5 MB buffer — that also
+failed with OOM because `import_forever=true` in the V230703 DLA had already consumed all
+device-VA with 249 subgraph binaries permanently mapped (~16 MB pool fully exhausted).
+
+Root cause confirmed: `import_forever=true` baked into V230703 DLA is the fundamental blocker.
+No external memory path (V1 or V2) can work while import_forever holds the device-VA pool.
+
+---
+
+## Attempt 24 — 2026-05-18
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, same as Attempts 21–23)
+
+### Dispatch plugin
+
+Reverted to `setInputFromMemory`/`setOutputFromMemory` for the AHWB case. Attempted
+`/dev/dma_heap/mtk_sapu_data_shm_region` (SAPU heap — the MediaTek APUSys-internal heap) as
+the DMA-BUF source. Rationale: SAPU heap pages are allocated by the APUSys kernel driver
+itself, so `session_memImportV1` should accept them since they come from APUSys's own memory
+pool (not an external DMA-BUF that needs IOMMU re-mapping).
+
+Falls back to regular AHWB path if SAPU heap open fails.
+
+### Status
+
+FAILED — MTK-DIAG messages not captured before ring buffer overflow; `session_memImportV1`
+still failed (same error pattern). SAPU heap either fell back silently to AHWB, or SAPU heap
+DMA-BUFs are also rejected. The V1 AIDL path cannot import ANY external DMA-BUF on this
+device regardless of heap type.
+
+---
+
+## Attempt 25 — 2026-05-18
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, same as Attempts 21–24)
+
+### Dispatch plugin
+
+AHWB host-pointer V2 path. `memory_create_from_ahwb` registers the AHWB's DMA-BUF with
+APUSys's internal table so `memGetInfoFromHostPtr` can resolve the VA → fd at execution time.
+Lock AHWB once at `RegisterTensorBuffer` to capture its stable VA, then immediately unlock
+(mmap persists until AHWB freed). At inference: `execution_set_input(locked_ptr)` uses V2 path
+without needing `session_memImportV1`.
+
+Logs `[MTK-DIAG] Att25: AHWB ptr=<ptr> neuron_mem=<ptr> size=<n>`.
+
+### Status
+
+FAILED — `mmap failed sharedFd=0`.
+
+`memory_create_from_ahwb` does NOT register the AHWB's VA with APUSys's `memGetInfoFromHostPtr`
+table. The locked ptr (`0x7945ba9000`) was confirmed to be outside APUSys's VA table (fd=0
+returned). APUSys then tried its own internal buffer — also OOM (import_forever exhausted
+device-VA). Confirmed: BOTH V1 and V2 paths reject all external memory on this device while
+import_forever is active.
+
+---
+
+## Attempt 26 — 2026-05-19 (IN PROGRESS)
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, same as Attempts 21–25)
+
+### Dispatch plugin
+
+Fresh NeuronCompilation without `import_forever`. After `model_restore_from_compiled_network`
+(required for V230703 format), immediately discard the resulting compilation and create a new
+one via `NeuronCompilation_createWithOptions(model, &compilation, "")` — empty options string
+means no `import_forever`. Call `NeuronCompilation_finish` on the new compilation.
+
+Rationale: If `model_restore_from_compiled_network` leaves the model in an already-compiled
+state (pre-loaded DLA bytecode), the fresh `compilation_finish` should return quickly using the
+embedded DLA without `import_forever`. With import_forever gone, APUSys device-VA pool has ~16
+MB free for I/O buffers. Combined with Attempt 25's AHWB host-pointer path.
+
+Falls back to the cached (import_forever) compilation if `compilation_create_with_options` or
+`compilation_finish` fails.
+
+Logs `[MTK-DIAG] Att26: fresh compilation OK` on success or `compilation_finish failed
+result=<n>` on fallback.
+
+### Status
+
+IN PROGRESS — build succeeded (2026-05-19). Awaiting device reconnect for install.
 
 ---
 

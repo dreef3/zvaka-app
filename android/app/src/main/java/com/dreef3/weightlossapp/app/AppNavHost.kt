@@ -4,6 +4,9 @@ import android.Manifest
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoGraph
@@ -19,10 +22,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dreef3.weightlossapp.BuildConfig
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -44,6 +51,25 @@ import com.dreef3.weightlossapp.features.onboarding.ProfileEditScreen
 import com.dreef3.weightlossapp.features.summary.TodaySummaryScreenRoute
 import com.dreef3.weightlossapp.features.trends.MealDebugScreenRoute
 import com.dreef3.weightlossapp.features.trends.TrendsScreenRoute
+
+@Composable
+private fun NpuStatusBanner() {
+    val status by NpuSmokeTestState.status.collectAsStateWithLifecycle()
+    val (color, label) = when (val s = status) {
+        NpuSmokeTestStatus.NotRunning -> Color.Gray to "NPU: Not Running"
+        NpuSmokeTestStatus.Running -> Color(0xFFFF8800) to "NPU: Running…"
+        is NpuSmokeTestStatus.Failed -> Color.Red to "NPU: FAILED — ${s.error}"
+        NpuSmokeTestStatus.Succeeded -> Color(0xFF00AA00) to "NPU: Succeeded"
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Text(label, color = Color.White, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
 
 private data class BottomDestination(
     val route: String,
@@ -101,6 +127,11 @@ fun AppNavHost(
     }
 
     Scaffold(
+        topBar = {
+            if (BuildConfig.DEBUG) {
+                NpuStatusBanner()
+            }
+        },
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar {

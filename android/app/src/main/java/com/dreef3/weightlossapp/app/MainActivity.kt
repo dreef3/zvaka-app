@@ -25,7 +25,19 @@ import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+
+sealed interface NpuSmokeTestStatus {
+    data object NotRunning : NpuSmokeTestStatus
+    data object Running : NpuSmokeTestStatus
+    data class Failed(val error: String) : NpuSmokeTestStatus
+    data object Succeeded : NpuSmokeTestStatus
+}
+
+object NpuSmokeTestState {
+    val status = MutableStateFlow<NpuSmokeTestStatus>(NpuSmokeTestStatus.NotRunning)
+}
 
 class MainActivity : ComponentActivity() {
     private val debugScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -155,6 +167,7 @@ class MainActivity : ComponentActivity() {
         if (!BuildConfig.DEBUG || intent?.getBooleanExtra(EXTRA_RUN_COACH_NPU_SMOKE_TEST, false) != true) {
             return
         }
+        NpuSmokeTestState.status.value = NpuSmokeTestStatus.Running
         debugScope.launch {
             val result = AppContainer.instance.selectedCoachNpuSmokeTestEngine.sendMessage(
                 message = "Reply with exactly OK.",
@@ -167,8 +180,16 @@ class MainActivity : ComponentActivity() {
                 ),
             )
             result
-                .onSuccess { reply -> Log.i(TAG, "Coach NPU smoke test succeeded: ${reply.take(120)}") }
-                .onFailure { throwable -> Log.e(TAG, "Coach NPU smoke test failed", throwable) }
+                .onSuccess { reply ->
+                    Log.i(TAG, "Coach NPU smoke test succeeded: ${reply.take(120)}")
+                    NpuSmokeTestState.status.value = NpuSmokeTestStatus.Succeeded
+                }
+                .onFailure { throwable ->
+                    Log.e(TAG, "Coach NPU smoke test failed", throwable)
+                    NpuSmokeTestState.status.value = NpuSmokeTestStatus.Failed(
+                        throwable.message?.take(200) ?: "unknown error",
+                    )
+                }
         }
     }
 
