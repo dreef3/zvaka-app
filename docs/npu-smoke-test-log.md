@@ -1097,9 +1097,109 @@ Logs `[MTK-DIAG] Att28: AHWB neuron_mem=<ptr> size=<n> off=<n>` at registration 
 
 SDK: `gemma3-270m-it_mt6985_v9.litertlm` (NA 8.2.26, NeuroPilot 6.0.3)
 
+### Result
+
+```
+W neuron  : session_memImportV1 fail
+E apusys  : APUSys imports ION buffer fd=4002 failed
+[MTK-DIAG] Att28: execution_set_input_from_memory idx=1 result=4 mem=... off=0 size=5242880
+```
+
+- idx=0 (~320 KB, small buffer): `execution_set_input_from_memory` SUCCEEDS
+- idx=1 (5 MB KV cache): FAILS with `session_memImportV1 fail` / `APUSys imports ION buffer fd=4002 failed`
+
+`memory_create_from_ahwb` succeeds for BOTH buffers. The `session_memImportV1` rejection happens
+at inference time when APUSys tries to map the NeuronMemory into device-VA. The AHWB is ION-backed
+(`ION buffer` log confirms). APUSys rejects ION-backed fds via the v1 AIDL import path.
+
+Root cause confirmed: `import_forever=true` in the V230703 DLA permanently maps all 249 subgraph
+binaries into APUSys device-VA (~16 MB total pool) during `model_restore_from_compiled_network`.
+Only ~320 KB of device-VA remains available for I/O tensor buffer imports, which is enough for
+the small idx=0 buffer but not the 5 MB KV cache (idx=1).
+
+All external DMA-BUF/AHWB/ION import paths are exhausted:
+- `session_memImportV1`: rejects all external heaps for large buffers (device-VA exhausted by import_forever)
+- `memGetInfoFromHostPtr` (V2 path): returns fd=0 for all external memory (AHWB-locked, sys-uncached)
+- SAPU heaps: SELinux label `dmabuf_system_secure_heap_device` — inaccessible from UID 10750
+- `com.mediatek.compiled_network` extension: not supported on NeuronAdapter 8.2.26
+
 ### Status
 
-IN PROGRESS
+FAILED — APUSys device-VA exhausted by `import_forever=true`; all I/O import paths blocked for large buffers.
+
+---
+
+## Attempt 29 — 2026-05-19 (diagnostic)
+
+### Bundle
+
+`gemma-3-270m-it_mt6985.litertlm` (230 MB, same as Attempts 21–28)
+
+### Dispatch plugin
+
+Added Att29 diagnostic to `LoadFromCachedNetwork`:
+- Hex-dump first 128 bytes of each DLA bytecode
+- `memmem` search for text `import_forever` in the bytecode
+
+### Result
+
+```
+[MTK-DIAG] Att29 DLA[000]: ed 3c 03 00 f4 08 00 00 00 00 00 00 f0 08 00 00 ...
+[MTK-DIAG] Att29 import_forever text found=NO offset=-1
+```
+
+- DLA bytes start with magic `ed 3c 03 00` (V230703 AdapterCache format)
+- `import_forever` is NOT stored as text — it's binary-encoded in the DLA compilation metadata
+- Text search failed; binary patching the DLA itself is not feasible without format spec
+
+### Status
+
+DIAGNOSTIC CONFIRMED — `import_forever` binary-encoded; V230703 DLA format used.
+
+---
+
+## Attempt 30 — 2026-05-20
+
+### Bundle
+
+New model compiled on GCP WITHOUT `import_forever`.
+
+### Root cause to fix
+
+`kDefaultAotCompilationOptions = "--apusys-config \"{ \\\"import_forever\\\": true }\""` is
+hardcoded in `litert/vendors/mediatek/neuron_adapter_api.h` and baked into the V230703 DLA at
+GCP compile time via `NeuronCompilation_createV2(model, type, "--apusys-config \"{\\\"import_forever\\\": true}\"", &compilation)`.
+
+Since `import_forever` is baked into the DLA binary at compile time and `restoreFromCompiledNetwork`
+cannot override it (restored model has no graph ops), the fix requires recompiling the model
+without the `import_forever=true` option.
+
+### Fix
+
+Binary-patch `libLiteRtCompilerPlugin_MediaTek.so` (in the GCP ai_edge_litert venv) to replace:
+- `--apusys-config "{ \"import_forever\": true }"` → `--apusys-config "{}"\x00...`
+
+The string is 46 bytes including null-terminator; replacement uses same size with null-padding
+after `{}`. This causes `NeuronCompilation_createV2` to receive an empty JSON config — no
+`import_forever` flag — so it uses the default (disabled) behavior.
+
+Patched SO confirmed: `strings` shows `--apusys-config "{}"` instead of `import_forever: true`.
+
+### Plan
+
+1. Sync patched tools to GCP (LOCAL_WORKTREE=/home/ae/weight-loss-app)
+2. Create GCP spot VM, bootstrap with patched ai-edge-litert SO
+3. Run `run_stable_export_gemma3_270m_v9.sh` (v9_0_3 SDK, MT6985 target)
+4. Download resulting `gemma-3-270m-it_mt6985.litertlm`
+5. Deploy on device, run smoke test
+
+If import_forever is disabled: all 249 DLA subgraphs will NOT permanently consume device-VA at
+`restoreFromCompiledNetwork`. Device-VA will remain available for I/O buffer imports via
+`execution_set_input_from_memory` (AHWB NeuronMemory path, Att28 code in dispatch plugin).
+
+### Status
+
+IN PROGRESS — GCP compilation pending.
 
 ---
 
@@ -1130,11 +1230,16 @@ cd /home/ae/weight-loss-app/android && ./gradlew installDebug
 adb shell run-as com.dreef3.weightlossapp.debug mkdir -p cache/models
 adb shell run-as com.dreef3.weightlossapp.debug cp /data/local/tmp/gemma3-270m-it_mt6985_v9.litertlm cache/models/gemma-3-270m-it_mt6985.litertlm
 
-# Run smoke test
-adb shell am broadcast -a com.dreef3.weightlossapp.NPU_SMOKE_TEST -n com.dreef3.weightlossapp.debug/.app.NpuSmokeTestReceiver
+# Clear logcat FIRST, then start logcat monitor in background, THEN launch smoke test
+adb logcat -c
+adb logcat -v time 2>&1 | grep -E "MTK-DIAG|MainActivity|NeuronAdapter|litert|dispatch|FATAL|SIGABRT" &
+# Smoke test: start MainActivity with runCoachNpuSmokeTest=true extra
+# (NpuSmokeTestReceiver does NOT exist; smoke test is triggered via am start)
+adb shell am start -n com.dreef3.weightlossapp.debug/com.dreef3.weightlossapp.app.MainActivity \
+  --ez runCoachNpuSmokeTest true
 
-# Watch logcat
-adb logcat -v time -s NpuSmokeTest LiteRtConversationRunner litert native
+# Watch logcat (results in MainActivity tag)
+adb logcat -v time -s MainActivity litert native
 
 # Verify model in place
 adb shell run-as com.dreef3.weightlossapp.debug ls -lh cache/models/
