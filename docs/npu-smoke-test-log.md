@@ -1270,17 +1270,89 @@ FAILED — v8_0_10 FC bias validation blocks entire model compilation.
 
 ### Strategy
 
-v9_0_3 SDK (no FC bias issue) + import_forever:false + fixed fix_dynamic_reshape.py.
-
-Fix to fix_dynamic_reshape.py: bake shape into shape tensor buffer (make constant)
-BUT keep 2 inputs (`op.inputs = [input0, shape_tensor]` — do NOT remove input 1).
-This produces 2-input constant RESHAPE, which NeuronAdapter v9_0_3 should accept.
+v9_0_3 SDK + import_forever:false + fixed fix_dynamic_reshape.py (bake shapes, keep 2 inputs)
++ MapReshapeOps JA→NOP patch at both occurrences (0xf5f72b and 0x1166170).
 
 Script: `tools/gcp/run_att45_v9_fixed_reshape.sh`
 
+### Result
+
+FAILED — v9_0_3 also rejects non-float FC biases: `"Bias should be floating point type"`, 0 ops selected.
+
+Root cause: Att31–43 failed on RESHAPE BEFORE reaching the FC bias check. Now that RESHAPE
+passes, the FC bias check is exposed. v9_0_3 libneuron_adapter.so validates FC bias types
+even for CPU-fallback ops. Pattern (JA + BT %rax,%rdx + JAE) at file offset 0x1056652 in
+v9_0_3 SO leads to the error. Error: `tmputmbm6jf.error` (13:08 UTC).
+
+---
+
+## Attempt 46 — 2026-05-22
+
+### Strategy
+
+v9_0_3 + import_forever:false + fixed RESHAPE + MapReshapeOps NOP + FC bias NOP.
+
+Script: `tools/gcp/run_att46_v9_fc_bias_patch.sh`
+
+### Result
+
+PARTIAL PROGRESS — FC bias gate passed. 1291 ops selected (subgraph 0), 1184 (subgraph 1).
+Compilation started for 291 NPU subgraphs. FAILED: `Compile error: NoExecPlan`.
+
+Root cause: MapReshapeOps NOP lets RESHAPE pass GetSupportedOperations → RESHAPE enters
+NPU subgraphs → MDLA hardware rejects them at compile time ("Unsupported layer"). Need
+to either not NOP MapReshapeOps OR prevent RESHAPE from entering NPU via the shim.
+
+---
+
+## Attempt 47 — 2026-05-22
+
+### Strategy
+
+v9_0_3 + import_forever:false + FC bias NOP ONLY (revert MapReshapeOps NOP).
+Expected: MapReshapeOps check naturally rejects RESHAPE → CPU, other ops → NPU.
+
+Script: `tools/gcp/run_att47_v9_no_reshape_nop.sh`
+
+### Result
+
+FAILED — MapReshapeOps check fires but causes a FATAL non-SIGABRT error that propagates
+to 0 ops selected (not per-op rejection as expected). Last line of error file:
+`INFO: MapReshapeOps: Output shape as inputs not supported` → same 109KB file as before.
+
+Conclusion: MapReshapeOps check cannot be used as a CPU-fallback filter — it aborts the
+entire GetSupportedOperations call when it fires, not just the specific op.
+
+---
+
+## Attempt 48 — 2026-05-22
+
+### Strategy
+
+v9_0_3 + import_forever:false + MapReshapeOps NOP + FC bias NOP + neuron_shim (modified).
+
+Key insight: neuron_shim intercepts NeuronCompilation_getSupportedOperations and forces
+RESHAPE + FC to CPU in post-processing, AFTER MapReshapeOps NOP prevents the fatal crash.
+
+Modified neuron_shim.c:
+- Forces ALL RESHAPE (type 22) ops to CPU (old code only checked INT32 input[0];
+  our model has INT8 input[0] and INT32 input[1], so the old check missed them)
+- Forces ALL FC (type 9) ops to CPU (consistent with whitelist fallback exclusion)
+- RESHAPE removed from whitelist fallback
+- Extension ops: unchanged
+
+Pipeline:
+1. Restore v9_0_3 SO from `.bak` (original)
+2. Apply MapReshapeOps NOP (prevents fatal crash when child calls getSupportedOperations)
+3. Apply FC bias NOP (prevents bias-check crash in child)
+4. Build neuron_shim.c as the new libneuron_adapter.so; real (patched) SO → _real.so
+5. protect_dla_dir.so redirects dlopen("libneuron_adapter.so") → shim
+
+Script: `tools/gcp/run_att48_v9_shim.sh`
+
 ### Status
 
-IN PROGRESS — GCP compilation running (PID=43001 on litert-export-spot).
+IN PROGRESS — GCP compilation running on litert-export-spot.
 
 ---
 

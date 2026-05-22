@@ -455,7 +455,9 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
                  *   NoExecPlan (error 6).  Fake-success produced 0-byte DLA blobs that
                  *   crash NeuronCompilation_restoreFromCompiledNetwork at runtime.
                  *   Run all MUL ops on CPU instead. */
-                22,  /* RESHAPE (float; INT32 excluded by inp0 check above) */
+                /* 22 = RESHAPE excluded: MDLA rejects all 2-input RESHAPE regardless
+                 *   of data type (both INT8 and INT32 inputs cause NoExecPlan).
+                 *   Always run RESHAPE on CPU. */
                 25,  /* SOFTMAX */
                 31,  /* MEAN */
                 36,  /* SUB */
@@ -517,24 +519,32 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
                     continue;
                 }
 
-                /* Force RESHAPE ops whose data input is INT32 to CPU.
-                 * NeuronAdapter v9_0_3 wrongly marks these as supported; MDLA
-                 * rejects them with NoExecPlan at NeuronCompilation_finish time. */
-                if (op->type != NNAPI_RESHAPE) continue;
-                if (op->n_inputs < 1) continue;
-                uint32_t data_idx = op->inputs[0];
-                if (data_idx >= (uint32_t)s->operand_count) continue;
-                if (s->operand_type[data_idx] == NNAPI_INT32) {
+                /* Force ALL RESHAPE ops to CPU.
+                 * MDLA rejects 2-input RESHAPE (data + shape tensor) regardless of
+                 * data type — both INT8 and INT32 inputs hit NoExecPlan at
+                 * NeuronCompilation_finish time. */
+                if (op->type == NNAPI_RESHAPE) {
                     supported[i] = false;
                     patched_reshape++;
+                    continue;
+                }
+
+                /* Force ALL FC (FULLY_CONNECTED, type 9) ops to CPU.
+                 * Consistent with whitelist fallback exclusion: MDLA rejects INT4/INT8
+                 * FC ops with "data type mismatch for input and filter" at compile time,
+                 * which causes NoExecPlan for any subgraph containing them. */
+                if (op->type == 9 /* ANEURALNETWORKS_FULLY_CONNECTED */) {
+                    supported[i] = false;
+                    patched_reshape++;
+                    continue;
                 }
             }
         }
         fprintf(stderr,
-                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d INT32-RESHAPE + %d EXT unsupported\n",
+                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC + %d EXT unsupported\n",
                 num_ops, patched_reshape, patched_ext);
         fprintf(L,
-                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d INT32-RESHAPE + %d EXT unsupported\n",
+                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC + %d EXT unsupported\n",
                 num_ops, patched_reshape, patched_ext);
         fflush(L);
         /* Return 0 — callers must not abort compilation based on getSupportedOps rc. */
