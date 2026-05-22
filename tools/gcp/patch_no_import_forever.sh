@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # patch_no_import_forever.sh — patch libLiteRtCompilerPlugin_MediaTek.so in
-# the active venv to remove import_forever=true from the default APUSys config.
+# the active venv to set import_forever=false in the default APUSys config.
 #
 # Run this after `uv pip install ai-edge-litert` and before the export.
 # The patch replaces the 46-byte string:
 #   --apusys-config "{ \"import_forever\": true }"
-# with:
-#   --apusys-config "{}"\x00...  (null-padded to same length)
+# with (same 46 bytes, no null padding needed):
+#   --apusys-config "{ \"import_forever\":false }"
 #
-# This causes NeuronCompilation_createV2 to receive an empty JSON config,
-# so the DLA is compiled WITHOUT import_forever baked in.
+# Note: the space before the colon+value is removed to fit "false" (5 chars)
+# where " true" (5 chars) was, keeping identical byte length.
+#
+# This causes NeuronCompilation_createV2 to receive import_forever=false,
+# so the DLA is compiled WITHOUT permanent device-VA mapping.
 
 set -euo pipefail
 
@@ -40,19 +43,21 @@ so_path = sys.argv[1]
 with open(so_path, 'rb') as f:
     data = bytearray(f.read())
 
-original = b'--apusys-config "{ \\"import_forever\\": true }"'
-replacement_str = b'--apusys-config "{}"'
-replacement = replacement_str + b'\x00' * (len(original) - len(replacement_str))
+original      = b'--apusys-config "{ \\"import_forever\\": true }"'
+replacement   = b'--apusys-config "{ \\"import_forever\\":false }"'
+old_empty_cfg = b'--apusys-config "{}"'
 
 assert len(replacement) == len(original), \
     f"Length mismatch: {len(replacement)} != {len(original)}"
 
 count = data.count(original)
 if count == 0:
-    # Check if already patched
-    if replacement_str in data and original not in data:
-        print("Already patched (import_forever not found, empty config present). No-op.")
+    if replacement in data and original not in data:
+        print("Already patched (import_forever=false present). No-op.")
         sys.exit(0)
+    if old_empty_cfg in data and original not in data:
+        print("ERROR: SO has old '{}' patch; restore from .bak first, then re-run.", file=sys.stderr)
+        sys.exit(1)
     print(f"ERROR: import_forever string not found in {so_path}", file=sys.stderr)
     sys.exit(1)
 
@@ -68,7 +73,7 @@ while True:
     idx = data.find(original, pos)
     if idx == -1:
         break
-    data[idx:idx+len(original)] = replacement
+    data[idx:idx+len(original)] = replacement  # same length, no resize
     patches += 1
     pos = idx + len(replacement)
 

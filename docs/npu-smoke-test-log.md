@@ -1199,7 +1199,88 @@ If import_forever is disabled: all 249 DLA subgraphs will NOT permanently consum
 
 ### Status
 
-IN PROGRESS — GCP compilation pending.
+FAILED — v9_0_3 SDK + import_forever:false patch → `apply_plugin failed`: "RESHAPE: Invalid number
+of in operands. Got 1 of 2". Root cause: `fix_dynamic_reshape.py` was removing input 1 from RESHAPE
+ops (creating 1-input RESHAPE), which NeuronAdapter v9_0_3 rejects.
+
+Note: the patch string used was `--apusys-config "{}"` (empty JSON) but was later updated to
+`--apusys-config "{ \"import_forever\":false }"` for explicit false.
+
+---
+
+## Attempts 31–43 — 2026-05-20 to 2026-05-21
+
+### Root cause
+
+All attempts used v9_0_3 SDK + `import_forever:false` patch. Failed with
+`RESHAPE: Invalid number of in operands. Got 1 of 2`.
+
+Previously believed to be "v9_0_3 rejects import_forever:false" — this was WRONG.
+v9_0_3 actually ACCEPTS `import_forever:false` (confirmed in error logs:
+`INFO: NeuronCompilation_createWithOptions: --apusys-config "{ \"import_forever\":false }"`
+appears before the RESHAPE error).
+
+The real cause: RESHAPE ops in model_quantized.tflite have 2-input DYNAMIC format
+(shape tensor has no buffer data). The LiteRT compiler plugin, when building the
+NeuronAdapter subgraph, creates 1-input RESHAPE ops (using only the input tensor,
+not the shape tensor). v9_0_3 expects 2-input RESHAPE.
+
+Various attempts tried:
+- Att31: recompile_apply_plugin.py on v9 cached model, v9_0_3 SDK, no protect_dla_dir.so
+- Att32-39: various combinations with protect_dla_dir.so, NEURON_ADAPTER_OVERRIDE_SO redirect
+- Att40-43: fix_dynamic_reshape.py (which REMOVED input 1 → worsened the error: model now has
+  1-input RESHAPE, which v9_0_3 explicitly rejects as "Got 1 of 2")
+- Att43: v8_0_10 + fix_dynamic_reshape + v9_0_3 redirect via protect_dla_dir.so
+
+### Status
+
+FAILED (all) — RESHAPE input count mismatch.
+
+---
+
+## Attempt 44 — 2026-05-22
+
+### Strategy
+
+v8_0_10 SDK (device-compatible DLA format) + binary NOP patch to bypass MapReshapeOps check
++ import_forever:false patch in compiler plugin SO.
+
+Binary patch target: v8_0_10 `libneuron_adapter.so` offset 0xc21f40:
+- CMP $0x2,%ecx (83 f9 02) + JAE to "Output shape as inputs not supported" (73 2a)
+- Patched: 83 f9 02 **90 90** (NOP NOP)
+
+Script: `tools/run_stable_export_gemma3_270m_v8_no_import_forever.sh`
+
+### Result
+
+FAILED — v8_0_10 NeuronAdapter validates the FULL MODEL (all 1361 ops) including
+CPU-destined FULLY_CONNECTED layers. Biases for quantized FC layers are INT32, but
+v8_0_10 requires float biases: "Invalid FullyConnectedLayer<N>: Bias should be floating
+point type". Model verification failed → 0 ops selected → 0 DLA partitions.
+
+v9_0_3 does NOT have this restriction (confirmed: v9 compiled the same model in Att28).
+
+### Status
+
+FAILED — v8_0_10 FC bias validation blocks entire model compilation.
+
+---
+
+## Attempt 45 — 2026-05-22
+
+### Strategy
+
+v9_0_3 SDK (no FC bias issue) + import_forever:false + fixed fix_dynamic_reshape.py.
+
+Fix to fix_dynamic_reshape.py: bake shape into shape tensor buffer (make constant)
+BUT keep 2 inputs (`op.inputs = [input0, shape_tensor]` — do NOT remove input 1).
+This produces 2-input constant RESHAPE, which NeuronAdapter v9_0_3 should accept.
+
+Script: `tools/gcp/run_att45_v9_fixed_reshape.sh`
+
+### Status
+
+IN PROGRESS — GCP compilation running (PID=43001 on litert-export-spot).
 
 ---
 
