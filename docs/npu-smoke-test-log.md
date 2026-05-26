@@ -1329,30 +1329,92 @@ entire GetSupportedOperations call when it fires, not just the specific op.
 
 ### Strategy
 
-v9_0_3 + import_forever:false + MapReshapeOps NOP + FC bias NOP + neuron_shim (modified).
+v9_0_3 + shim + both NOPs. Script: `tools/gcp/run_att48_v9_shim.sh`
 
-Key insight: neuron_shim intercepts NeuronCompilation_getSupportedOperations and forces
-RESHAPE + FC to CPU in post-processing, AFTER MapReshapeOps NOP prevents the fatal crash.
+### Result
 
-Modified neuron_shim.c:
-- Forces ALL RESHAPE (type 22) ops to CPU (old code only checked INT32 input[0];
-  our model has INT8 input[0] and INT32 input[1], so the old check missed them)
-- Forces ALL FC (type 9) ops to CPU (consistent with whitelist fallback exclusion)
-- RESHAPE removed from whitelist fallback
-- Extension ops: unchanged
+FAILED — shim SO built with wrong SONAME symlink. `NEEDED: libneuron_adapter.so.9`
+but script created `libneuron_adapter_real.so.9` (wrong name) → shim couldn't load real
+SO → `neuron_adapter_api.cc:65 Failed to load NeuronAdapter shared library`.
 
-Pipeline:
-1. Restore v9_0_3 SO from `.bak` (original)
-2. Apply MapReshapeOps NOP (prevents fatal crash when child calls getSupportedOperations)
-3. Apply FC bias NOP (prevents bias-check crash in child)
-4. Build neuron_shim.c as the new libneuron_adapter.so; real (patched) SO → _real.so
-5. protect_dla_dir.so redirects dlopen("libneuron_adapter.so") → shim
+---
 
-Script: `tools/gcp/run_att48_v9_shim.sh`
+## Attempt 49 — 2026-05-22
 
-### Status
+### Strategy
 
-IN PROGRESS — GCP compilation running on litert-export-spot.
+Same as Att48 but with fixed SONAME symlink:
+`ln -sf libneuron_adapter_real.so ${V9_DIR}/libneuron_adapter.so.9`
+(matches the real SO's DT_SONAME which the dynamic linker uses to resolve NEEDED)
+
+Script: `tools/gcp/run_att49_v9_shim_soname_fix.sh`
+
+### Result
+
+**COMPILATION SUCCEEDED!** ✓ (13:43:01 → 13:43:27, only 26 seconds)
+
+Output: `prefill_decode.tflite` (141 MB) + `embedder.tflite` (87 MB)  
+Bundle: `gemma3-270m-att49.litertlm` (233 MB)
+
+Shim debug log confirms: RESHAPE ops forced to CPU (op[8] type=22 supported=1 → patched).
+
+### Device test — 2026-05-26
+
+**FAILED** — DLA format incompatible with base adapter.
+
+```
+NeuronModel_restoreFromCompiledNetwork - Failed to load compiled network from the given buffer
+```
+
+Root cause: v9_0_3 SDK produces DLA in a format not recognized by the device's base
+NeuronAdapter 8.2.26 (`libneuronusdk_adapter.mtk.so`, SONAME `libneuron_adapter.so.8`).
+The rebuilt dispatch plugin loads base adapter preferentially; v9 DLA is rejected there.
+
+Fix: Switch compilation SDK from v9_0_3 → v8_0_10 (SONAME `libneuron_adapter.so.8`),
+which should produce DLA in a format that base adapter 8.2.26 can load.
+
+---
+
+## Attempt 50 — 2026-05-26
+
+### Strategy
+
+Switch compilation SDK from v9_0_3 → v8_0_10 to produce DLA compatible with device's
+base NeuronAdapter 8.2.26 (SONAME `libneuron_adapter.so.8`).
+
+Key differences vs Att49:
+- SDK: `v8_0_10/host/lib/libneuron_adapter.so`
+- SONAME symlink: `libneuron_adapter.so.8 → libneuron_adapter_real.so`
+- `--sdk-subdir v8_0_10/host/lib`
+- No `patch_fc_bias_check.py` — v8_0_10 uses `BT ecx,eax` (`0f a3 c1`) not found by
+  the v9 pattern searcher; `neuron_shim.c` updated with all-zero → whitelist fallback
+  (in case FC bias check silently returns 0 ops)
+- Compile both `prefill_decode` AND `embedder` with v8_0_10 shim
+
+Scripts: `tools/gcp/run_att50_v8_shim.sh` + `tools/gcp/run_att50_bundle.sh`
+
+### Compilation result — 2026-05-26
+
+**SUCCEEDED** ✓ (19:43:25 → 19:43:46, only 21 seconds)
+
+Output: `prefill_decode.tflite` (140 MB) + `embedder.tflite` (87 MB)  
+Bundle: `gemma3-270m-att50.litertlm` (230 MB, 241,745,920 bytes)
+
+Shim debug log (key finding): child exits cleanly with real non-zero results — the
+all-zero whitelist fallback was NOT needed. With MapReshapeOps NOP applied, v8_0_10
+`getSupportedOperations` returns valid supported flags; shim forced 107–211 RESHAPE/FC
+ops to CPU normally. DLA built with v8_0_10 format (should match adapter 8.2.26).
+
+Sample shim log:
+```
+getSupportedOps ENTER comp=0x... numOps=840
+child exited=1 status=0 sig=0 done_flag=1
+scanned 840 ops, forced 107 RESHAPE/FC + 0 EXT unsupported
+```
+
+Bundle pushed to device: `/data/data/com.dreef3.weightlossapp.debug/cache/models/gemma-3-270m-it_mt6985.litertlm` (231M)
+
+### Device test — pending
 
 ---
 

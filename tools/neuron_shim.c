@@ -434,45 +434,62 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
                 child_sig, (int)done_flag);
         fflush(L);
 
+        /* NPU whitelist: op types known to compile on MT6985 MDLA.
+         * Used when the child crashes (signal) OR returns all-false (silent model-level
+         * validation failure, e.g. FC bias check in v8_0_10 causes getSupportedOperations
+         * to return 0 ops for the whole model without crashing). */
+        static const int32_t npu_whitelist[] = {
+            0,   /* ADD */
+            2,   /* CONCATENATION */
+            /* 9 = FULLY_CONNECTED excluded: FC bias check ("Bias should be floating
+             *   point type") makes MDLA reject the whole subgraph.  CPU instead. */
+            /* 18 = MUL excluded: MUL+CONCAT subgraphs fail NeuronCompilation_finish
+             *   with NoExecPlan (error 6); fake-success 0-byte DLA blobs crash
+             *   NeuronCompilation_restoreFromCompiledNetwork at runtime. */
+            /* 22 = RESHAPE excluded: MDLA rejects 2-input RESHAPE regardless of data
+             *   type — both INT8 and INT32 inputs cause NoExecPlan at finish time. */
+            25,  /* SOFTMAX */
+            31,  /* MEAN */
+            36,  /* SUB */
+            37,  /* TRANSPOSE */
+            53,  /* GREATER */
+            86,  /* BATCH_MATMUL */
+        };
+        static const int npu_wl_sz =
+            (int)(sizeof(npu_whitelist) / sizeof(npu_whitelist[0]));
+
+        bool use_whitelist = false;
+
         if (child_ok) {
             /* Normal case: real function filled shared[] before calling exit().
              * The data is valid even when WEXITSTATUS is non-zero. */
             memcpy(supported, shared, (size_t)numOps * sizeof(bool));
-        } else {
-            /* Child was killed by signal — real getSupportedOperations crashed.
-             * Shared buffer is all-zeros (unreliable).  Use a whitelist of NNAPI
-             * op types known to compile on MT6985 MDLA.  Anything not in the list
-             * (e.g. LESS, CAST, FLOOR_DIV) stays on CPU — prevents MDLA rejecting
-             * ops it doesn't support. */
-            static const int32_t npu_whitelist[] = {
-                0,   /* ADD */
-                2,   /* CONCATENATION */
-                /* 9 = FULLY_CONNECTED excluded: FC bias patched as activation tensor
-                 *   (dynamic input), MDLA rejects "bias as inputs not supported" and
-                 *   makes the whole mixed subgraph fail — run FC on CPU instead. */
-                /* 18 = MUL excluded: MUL+CONCAT subgraphs (RoPE-related, nops≤3)
-                 *   pass getSupportedOperations but fail NeuronCompilation_finish with
-                 *   NoExecPlan (error 6).  Fake-success produced 0-byte DLA blobs that
-                 *   crash NeuronCompilation_restoreFromCompiledNetwork at runtime.
-                 *   Run all MUL ops on CPU instead. */
-                /* 22 = RESHAPE excluded: MDLA rejects all 2-input RESHAPE regardless
-                 *   of data type (both INT8 and INT32 inputs cause NoExecPlan).
-                 *   Always run RESHAPE on CPU. */
-                25,  /* SOFTMAX */
-                31,  /* MEAN */
-                36,  /* SUB */
-                37,  /* TRANSPOSE */
-                53,  /* GREATER */
-                86,  /* BATCH_MATMUL */
-            };
-            static const int npu_wl_sz =
-                (int)(sizeof(npu_whitelist) / sizeof(npu_whitelist[0]));
 
+            /* Detect silent all-zero result: real getSupportedOperations may return
+             * 0 ops via clean exit (no crash) due to model-level validation failures,
+             * e.g. v8_0_10 FC bias check fires for INT32 biases and causes the whole
+             * getSupportedOperations to return false for every op.
+             * Fall back to whitelist rather than returning 0 ops to the caller. */
+            bool any_true = false;
+            for (uint32_t i = 0; i < numOps; i++) {
+                if (supported[i]) { any_true = true; break; }
+            }
+            if (!any_true && num_ops > 0) {
+                use_whitelist = true;
+                fprintf(L,
+                        "[neuron_shim] getSupportedOps: child all-zero (silent fail) — whitelist fallback\n");
+                fflush(L);
+            }
+        } else {
+            /* Child was killed by signal — real getSupportedOperations crashed. */
+            use_whitelist = true;
             fprintf(L,
                     "[neuron_shim] getSupportedOps: child SIG%d — whitelist fallback (%d types)\n",
                     child_sig, npu_wl_sz);
             fflush(L);
+        }
 
+        if (use_whitelist) {
             memset(supported, 0, (size_t)numOps * sizeof(bool));
             if (s) {
                 for (int i = 0; i < num_ops && i < (int)numOps; i++) {
