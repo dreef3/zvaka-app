@@ -81,9 +81,10 @@ REAL_SO="${V9_DIR}/libneuron_adapter_real.so"
 echo "Copying patched SO to: $REAL_SO"
 cp "$V9_SO" "$REAL_SO"
 
-# Create SONAME symlink required by linker (-lneuron_adapter_real)
-SOLINK="${V9_DIR}/libneuron_adapter_real.so.9"
-ln -sf "libneuron_adapter_real.so" "$SOLINK" 2>/dev/null || true
+# Create SONAME symlink that the shim's NEEDED entry expects.
+# The real SO has SONAME=libneuron_adapter.so.9; the shim links against it,
+# so the dynamic linker resolves NEEDED[libneuron_adapter.so.9] via $ORIGIN.
+ln -sf "libneuron_adapter_real.so" "${V9_DIR}/libneuron_adapter.so.9" 2>/dev/null || true
 
 echo "Building neuron_shim.c..."
 gcc -shared -fPIC -o "$V9_SO" "$TOOLS_DIR/neuron_shim.c" \

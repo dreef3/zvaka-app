@@ -353,8 +353,12 @@ int NeuronCompilation_getCompiledNetworkSize(NeuronCompilation *compilation, siz
         fflush(L);
         return 0;
     }
-    return real_NeuronCompilation_getCompiledNetworkSize
+    int rc = real_NeuronCompilation_getCompiledNetworkSize
            ? real_NeuronCompilation_getCompiledNetworkSize(compilation, size) : -1;
+    fprintf(L, "[neuron_shim] getCompiledNetworkSize: real comp → size=%zu rc=%d\n",
+            size ? *size : (size_t)-1, rc);
+    fflush(L);
+    return rc;
 }
 
 int NeuronCompilation_storeCompiledNetwork(NeuronCompilation *compilation,
@@ -365,6 +369,8 @@ int NeuronCompilation_storeCompiledNetwork(NeuronCompilation *compilation,
         fflush(L);
         return 0;
     }
+    fprintf(L, "[neuron_shim] storeCompiledNetwork: real comp size=%zu\n", size);
+    fflush(L);
     return real_NeuronCompilation_storeCompiledNetwork
            ? real_NeuronCompilation_storeCompiledNetwork(compilation, buffer, size) : -1;
 }
@@ -448,10 +454,13 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
              *   NeuronCompilation_restoreFromCompiledNetwork at runtime. */
             /* 22 = RESHAPE excluded: MDLA rejects 2-input RESHAPE regardless of data
              *   type — both INT8 and INT32 inputs cause NoExecPlan at finish time. */
+            /* 37 = TRANSPOSE excluded: transformer attention patterns produce TRANSPOSE
+             *   DLAs that fail NeuronModel_restoreFromCompiledNetwork on adapter 8.2.26.
+             *   Reducing DLA count by moving TRANSPOSE to CPU moves the failure threshold
+             *   past the last partition. */
             25,  /* SOFTMAX */
             31,  /* MEAN */
             36,  /* SUB */
-            37,  /* TRANSPOSE */
             53,  /* GREATER */
             86,  /* BATCH_MATMUL */
         };
@@ -527,6 +536,19 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
                 if (!supported[i]) continue;
                 typeof(s->ops[0]) *op = &s->ops[i];
 
+                /* Force any op whose first input tensor is INT32 to CPU.
+                 * MDLA fundamentally cannot process ANEURALNETWORKS_TENSOR_INT32
+                 * (operandCode 4) operands — it rejects them at compile time with
+                 * "Cannot support Int32 input".  Catches MAXIMUM(Int32), GATHER,
+                 * and similar index/scalar ops whose input[0] is an int32 tensor. */
+                if (op->n_inputs > 0 &&
+                    op->inputs[0] < (uint32_t)s->operand_count &&
+                    s->operand_type[op->inputs[0]] == NNAPI_INT32) {
+                    supported[i] = false;
+                    patched_reshape++;
+                    continue;
+                }
+
                 /* Force extension/vendor-fused ops (type >= 0x10000) to CPU.
                  * These composite ops get inlined into TRANSPOSE+MEAN primitives
                  * that the second-pass partition rejects entirely ("selected 0 ops"). */
@@ -555,13 +577,37 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
                     patched_reshape++;
                     continue;
                 }
+
+                /* Force ALL MUL (type 18) ops to CPU.
+                 * v8_0_10 NeuronCompilation_finish succeeds for MUL partitions but
+                 * the resulting DLA fails NeuronModel_restoreFromCompiledNetwork on
+                 * device — specifically MUL broadcast-shape subgraphs.  Consistent
+                 * with whitelist fallback which also excludes MUL (type 18). */
+                if (op->type == 18 /* ANEURALNETWORKS_MUL */) {
+                    supported[i] = false;
+                    patched_reshape++;
+                    continue;
+                }
+
+                /* Force ALL TRANSPOSE (type 37) ops to CPU.
+                 * Transformer attention patterns produce many TRANSPOSE DLAs; after
+                 * moving RESHAPE/FC/MUL to CPU the remaining TRANSPOSE DLAs contain
+                 * partitions that fail NeuronModel_restoreFromCompiledNetwork on device
+                 * adapter 8.2.26.  Reducing DLA count by forcing TRANSPOSE to CPU is
+                 * expected to move the device load failure threshold past the last
+                 * partition (~573 total for prefill_decode). */
+                if (op->type == 37 /* ANEURALNETWORKS_TRANSPOSE */) {
+                    supported[i] = false;
+                    patched_reshape++;
+                    continue;
+                }
             }
         }
         fprintf(stderr,
-                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC + %d EXT unsupported\n",
+                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC/MUL/TRANSPOSE + %d EXT unsupported\n",
                 num_ops, patched_reshape, patched_ext);
         fprintf(L,
-                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC + %d EXT unsupported\n",
+                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC/MUL/TRANSPOSE + %d EXT unsupported\n",
                 num_ops, patched_reshape, patched_ext);
         fflush(L);
         /* Return 0 — callers must not abort compilation based on getSupportedOps rc. */

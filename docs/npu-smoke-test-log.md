@@ -1414,7 +1414,118 @@ scanned 840 ops, forced 107 RESHAPE/FC + 0 EXT unsupported
 
 Bundle pushed to device: `/data/data/com.dreef3.weightlossapp.debug/cache/models/gemma-3-270m-it_mt6985.litertlm` (231M)
 
-### Device test — pending
+### Device test — 2026-05-26
+
+**FAILED** — `NeuronModel_restoreFromCompiledNetwork` fails at partition 480/573.
+
+```
+NeuronModel_restoreFromCompiledNetwork - Failed to load compiled network from the given buffer
+```
+
+Root cause (hypothesis): MUL broadcast-shape DLAs compiled by v8_0_10 are rejected by
+adapter 8.2.26 at inference time.  Partition 480 is the first such DLA encountered during
+eager loading at model init.
+
+Fix: force MUL (type 18) to CPU in `neuron_shim.c` (consistent with the whitelist fallback
+which already excluded MUL).
+
+---
+
+## Attempt 51 — 2026-05-26
+
+### Strategy
+
+Same as Att50 but with MUL (type 18) also forced to CPU in `neuron_shim.c`.
+
+Script: `tools/gcp/run_att51_v8_shim_nomul.sh`
+
+### Compilation result — 2026-05-26
+
+**PARTIAL** — prefill_decode SUCCEEDED (140 MB), embedder FAILED.
+
+Embedder failure: MAXIMUM(Int32) was left alone in an NPU partition after MUL moved to CPU.
+MDLA rejected it: `"Cannot support Int32 input"`.  `apply_plugin` aborted.
+
+Fix for embedder: add a general INT32 first-input check to `neuron_shim.c`.  Any op whose
+`inputs[0]` is `ANEURALNETWORKS_TENSOR_INT32` (operandCode 4) is forced to CPU.
+
+---
+
+## Attempt 52 — 2026-05-26
+
+### Strategy
+
+Reuse Att51's compiled prefill_decode.tflite.  Rebuild shim with INT32-input filter
+and recompile embedder only.
+
+Script: `tools/gcp/run_att52_embedder_fix.sh`
+
+### Compilation result — 2026-05-26
+
+**FAILED for embedder** — INT32 filter caused ALL 5 embedder ops to be forced to CPU,
+leaving 0 NPU ops.  `apply_plugin` requires ≥1 NPU op and returns hard error:
+`"apply_plugin failed"`.
+
+Workaround: bundle Att51 prefill + Att50 embedder (compiled before INT32 filter).
+Att50 embedder (87 MB) includes 2 partitions (48+49) compiled with MUL on NPU.
+
+---
+
+## Attempt 53 — 2026-05-26
+
+### Strategy
+
+Hybrid bundle: Att51 prefill_decode (MUL on CPU, 140 MB) + Att50 embedder (MUL on NPU,
+87 MB).  Att51 prefill has fewer NPU DLAs than Att50 (MUL moved to CPU), expected to
+push device load failure threshold higher.
+
+Script: `tools/gcp/run_att53_hybrid_bundle.sh` *(run manually on VM)*
+
+### Device test — 2026-05-26
+
+**FAILED** — `NeuronModel_restoreFromCompiledNetwork` fails at partition 540/573.
+
+```
+NeuronModel_restoreFromCompiledNetwork - Failed to load compiled network from the given buffer
+```
+
+Analysis: failure moved from partition 480 (Att50) → 540 (Att53) after MUL went to CPU.
+Both Att50 and Att51 prefills have ~573 NPU DLAs.  Pattern (+60 with MUL on CPU) is
+consistent with two competing hypotheses:
+
+1. **APUSys DRAM exhaustion** (most likely): loading 573 DLAs fills ~18 MB device memory
+   cumulatively; each batch of forced-to-CPU ops reduces per-layer DLA count/footprint,
+   moving the exhaustion threshold up by ~60 partitions per forced op type.
+
+2. **0-byte DLA blobs**: `NeuronCompilation_finish` fails for specific partitions at
+   compile time → fake-success handler writes 0-byte blobs → device calls
+   `restoreFromCompiledNetwork` with 0 bytes → hard failure.  The first such 0-byte DLA
+   at device load time is partition 540.
+
+Both hypotheses predict that forcing TRANSPOSE (37) to CPU should move the failure further
+toward / past the last partition.
+
+---
+
+## Attempt 54 — 2026-05-26
+
+### Strategy
+
+Force TRANSPOSE (type 37) to CPU in addition to RESHAPE/FC/MUL/INT32-input.
+
+Rationale: transformer models contain many TRANSPOSE ops for attention pattern reshaping
+(at minimum one per attention layer per Q/K/V matmul transpose).  Removing them from NPU
+should reduce DLA count / memory footprint by another ~50–100 partitions, expected to
+push the failure threshold past 573 (all pass) if hypothesis A is correct, or eliminate
+the specific 0-byte TRANSPOSE DLAs if hypothesis B is correct.
+
+`neuron_shim.c` also gains DLA size logging in `getCompiledNetworkSize` and
+`storeCompiledNetwork` for real (non-fake) compilations, so the compile log will show
+which partitions have zero vs non-zero DLA blobs.
+
+Script: `tools/gcp/run_att54_no_transpose.sh`
+
+### Compilation result — pending
 
 ---
 
