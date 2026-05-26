@@ -1525,6 +1525,80 @@ which partitions have zero vs non-zero DLA blobs.
 
 Script: `tools/gcp/run_att54_no_transpose.sh`
 
+### Compilation result — 2026-05-26
+
+**SUCCEEDED** ✓ (21:44:21 → 21:44:45, 24 seconds)
+
+Output: `prefill_decode.tflite` (139 MB), **embedder FAILED** (0 NPU ops — TRANSPOSE
+removed the only remaining embedder ops; non-fatal, bundle runs embedder on CPU).
+Bundle: `gemma3-270m-att54.litertlm` (145 MB)
+
+Key shim log findings:
+```
+scanned 840 ops,  forced 0 RESHAPE/FC/MUL/TRANSPOSE + 0 EXT unsupported
+scanned 1464 ops, forced 0 RESHAPE/FC/MUL/TRANSPOSE + 0 EXT unsupported
+scanned 798 ops,  forced 0 RESHAPE/FC/MUL/TRANSPOSE + 0 EXT unsupported
+scanned 1361 ops, forced 0 RESHAPE/FC/MUL/TRANSPOSE + 0 EXT unsupported
+```
+
+**Critical finding**: shim forced 0 additional ops to CPU — v8_0_10 natively
+refuses RESHAPE/FC/MUL/TRANSPOSE already.  Att54 is effectively identical to Att51.
+
+DLA statistics: 537 total DLAs, ALL non-zero (sizes 4199–11744 bytes).
+```
+4 × 4199 B,  71 × 5037 B,  36 × 5349 B,  35 × 5365 B,  18 × 5369 B,
+1 × 5381 B,  53 × 5385 B,  71 × 5513 B,  35 × 5717 B,  69 × 6135 B,
+18 × 6155 B, 18 × 6183 B,  73 × 6597 B,  15 × 8807 B,  16 × 8839 B,
+2 × 11712 B, 2 × 11744 B
+```
+No fake-success 0-byte DLA blobs → hypothesis B (0-byte blobs) **eliminated**.
+Total DLA data ≈ 537 × 6 KB ≈ 3.2 MB → hypothesis A (DRAM exhaustion) **eliminated**.
+
+### Device test — 2026-05-26
+
+**FAILED** — same error as Att53, new diagnostic context:
+
+```
+Fail to revise dla::CompiledResult
+Fail to preprocess dla::CompiledGraph
+Fail to preprocess dla::CompiledNetwork
+Cannot prepare execution.
+Successfully open network but cannot start execution.
+NeuronModel_restoreFromCompiledNetwork - Failed to load compiled network from the given buffer
+[dispatch_api.cc:269] Failed to create context from context binary: Failed to restore model from compiled network
+```
+
+`"Successfully open network but cannot start execution"` confirms the DLA binary
+format (V230703 magic `ed 3c 03 00`) is valid — adapter 8.2.26 can open it.
+But `"Fail to revise dla::CompiledResult"` means an internal graph revision step
+fails, indicating a **runtime execution capability mismatch** — the compiled DLA
+uses a hardware feature not available in adapter 8.2.26.
+
+Root cause (new hypothesis C): v8_0_10 compiles BATCH_MATMUL DLAs using MDLA
+hardware features (possibly MDLA 3.1 execution mode or specific accumulator ISA)
+not present in adapter 8.2.26's runtime on the device (MDLA 3.0 on Dimensity 9200).
+
+Evidence: remaining NPU op types are ADD/CONCAT/SOFTMAX/MEAN/SUB/GREATER/BATCH_MATMUL.
+Of these, BATCH_MATMUL (type 86) is the most complex with the most hardware-dependent
+execution paths (matrix tiling, accumulator precision, etc.).
+
+---
+
+## Attempt 55 — 2026-05-26
+
+### Strategy
+
+Force BATCH_MATMUL (type 86) to CPU as a diagnostic.  If device loading succeeds →
+BATCH_MATMUL DLAs are the root cause of `Fail to revise dla::CompiledResult`.
+If it still fails → one of ADD/CONCAT/SOFTMAX/MEAN/SUB/GREATER is the culprit.
+
+Note: this is a diagnostic attempt only.  BATCH_MATMUL on CPU means the transformer's
+core matmul runs on CPU; NPU only runs activation/normalization ops.  If confirmed, Att56+
+will explore whether specific BATCH_MATMUL shapes can be targeted (e.g., shape-selective
+CPU forcing using operand dimension checks in the shim).
+
+Script: `tools/gcp/run_att55_no_batchmatmul.sh`
+
 ### Compilation result — pending
 
 ---

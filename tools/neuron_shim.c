@@ -458,11 +458,14 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
              *   DLAs that fail NeuronModel_restoreFromCompiledNetwork on adapter 8.2.26.
              *   Reducing DLA count by moving TRANSPOSE to CPU moves the failure threshold
              *   past the last partition. */
+            /* 86 = BATCH_MATMUL excluded (Att55 diagnostic): v8_0_10 compiles BATCH_MATMUL
+             *   DLAs that fail "Fail to revise dla::CompiledResult" at device runtime —
+             *   suspected MDLA hardware version mismatch (3.1 feature in 3.0 hardware).
+             *   Forcing to CPU confirms if BATCH_MATMUL is the root cause. */
             25,  /* SOFTMAX */
             31,  /* MEAN */
             36,  /* SUB */
             53,  /* GREATER */
-            86,  /* BATCH_MATMUL */
         };
         static const int npu_wl_sz =
             (int)(sizeof(npu_whitelist) / sizeof(npu_whitelist[0]));
@@ -601,13 +604,26 @@ int NeuronCompilation_getSupportedOperations(NeuronCompilation *compilation,
                     patched_reshape++;
                     continue;
                 }
+
+                /* Force ALL BATCH_MATMUL (type 86) ops to CPU.
+                 * Diagnostic for Att55: v8_0_10 natively supports BATCH_MATMUL but
+                 * the compiled DLAs fail NeuronModel_restoreFromCompiledNetwork with
+                 * "Fail to revise dla::CompiledResult" / "Fail to preprocess
+                 * dla::CompiledGraph" — a runtime execution capability mismatch.
+                 * Forcing BATCH_MATMUL to CPU removes those DLAs entirely; if device
+                 * load succeeds, BATCH_MATMUL is confirmed as the root cause. */
+                if (op->type == 86 /* ANEURALNETWORKS_BATCH_MATMUL */) {
+                    supported[i] = false;
+                    patched_reshape++;
+                    continue;
+                }
             }
         }
         fprintf(stderr,
-                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC/MUL/TRANSPOSE + %d EXT unsupported\n",
+                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC/MUL/TRANSPOSE/BMM + %d EXT unsupported\n",
                 num_ops, patched_reshape, patched_ext);
         fprintf(L,
-                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC/MUL/TRANSPOSE + %d EXT unsupported\n",
+                "[neuron_shim] getSupportedOps: scanned %d ops, forced %d RESHAPE/FC/MUL/TRANSPOSE/BMM + %d EXT unsupported\n",
                 num_ops, patched_reshape, patched_ext);
         fflush(L);
         /* Return 0 — callers must not abort compilation based on getSupportedOps rc. */
