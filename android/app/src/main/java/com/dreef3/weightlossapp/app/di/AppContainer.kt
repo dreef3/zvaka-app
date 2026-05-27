@@ -195,6 +195,28 @@ class AppContainer private constructor(context: Context) {
         }
     }
     val selectedCoachNpuSmokeTestEngine: DietChatEngine = rawSelectedCoachNpuSmokeTestEngine
+    private val rawSelectedCoachGpuSmokeTestEngine: DietChatEngine = object : DietChatEngine {
+        override suspend fun sendMessage(
+            message: String,
+            history: List<DietChatMessage>,
+            snapshot: DietChatSnapshot,
+        ): Result<String> {
+            val selectedModel = preferences.readCoachModel().requiredModelDescriptor()
+            return LiteRtDietChatEngine(
+                modelFile = modelStorage.fileFor(selectedModel),
+                correctionService = dietEntryCorrectionService,
+                inspectionService = dietEntryInspectionService,
+                backendPreferenceProvider = { GemmaBackend.GPU },
+                nativeLibraryDir = nativeLibraryDir,
+            ).sendMessage(message, history, snapshot)
+        }
+    }
+    val selectedCoachGpuSmokeTestEngine: DietChatEngine = rawSelectedCoachGpuSmokeTestEngine
+    val foodEstimationGpuSmokeTestEngine: FoodEstimationEngine = LiteRtFoodEstimationEngine(
+        modelFile = modelStorage.defaultModelFile,
+        backendPreferenceProvider = { GemmaBackend.GPU },
+        nativeLibraryDir = nativeLibraryDir,
+    )
     private val rawDietChatEngine: DietChatEngine = SelectableDietChatEngine(
         preferences = preferences,
         gemmaEngine = gemmaDietChatEngine,

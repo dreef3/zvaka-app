@@ -21,12 +21,18 @@ import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.appupdate.AppUpdateOptions
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.UpdateAvailability
+import android.graphics.Bitmap
+import android.graphics.Color
+import com.dreef3.weightlossapp.inference.FoodEstimationRequest
+import java.io.File
+import java.io.FileOutputStream
 import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface NpuSmokeTestStatus {
     data object NotRunning : NpuSmokeTestStatus
@@ -37,6 +43,18 @@ sealed interface NpuSmokeTestStatus {
 
 object NpuSmokeTestState {
     val status = MutableStateFlow<NpuSmokeTestStatus>(NpuSmokeTestStatus.NotRunning)
+}
+
+sealed interface GpuSmokeTestStatus {
+    data object NotRunning : GpuSmokeTestStatus
+    data object Running : GpuSmokeTestStatus
+    data class Failed(val error: String) : GpuSmokeTestStatus
+    data object Succeeded : GpuSmokeTestStatus
+}
+
+object GpuSmokeTestState {
+    val coachStatus = MutableStateFlow<GpuSmokeTestStatus>(GpuSmokeTestStatus.NotRunning)
+    val foodEstimationStatus = MutableStateFlow<GpuSmokeTestStatus>(GpuSmokeTestStatus.NotRunning)
 }
 
 class MainActivity : ComponentActivity() {
@@ -61,6 +79,8 @@ class MainActivity : ComponentActivity() {
         handleIntentActions(intent, fromNewIntent = false)
         maybeRunDebugCoachActions(intent)
         maybeRunCoachNpuSmokeTest(intent)
+        maybeRunCoachGpuSmokeTest(intent)
+        maybeRunFoodEstimationGpuSmokeTest(intent)
         appUpdateManager = AppUpdateManagerFactory.create(applicationContext)
         setContent {
             WeightLossAppTheme {
@@ -83,6 +103,8 @@ class MainActivity : ComponentActivity() {
         handleIntentActions(intent, fromNewIntent = true)
         maybeRunDebugCoachActions(intent)
         maybeRunCoachNpuSmokeTest(intent)
+        maybeRunCoachGpuSmokeTest(intent)
+        maybeRunFoodEstimationGpuSmokeTest(intent)
     }
 
     override fun onResume() {
@@ -187,6 +209,76 @@ class MainActivity : ComponentActivity() {
                 .onFailure { throwable ->
                     Log.e(TAG, "Coach NPU smoke test failed", throwable)
                     NpuSmokeTestState.status.value = NpuSmokeTestStatus.Failed(
+                        throwable.message?.take(200) ?: "unknown error",
+                    )
+                }
+        }
+    }
+
+    private fun maybeRunCoachGpuSmokeTest(intent: Intent?) {
+        if (!BuildConfig.DEBUG || intent?.getBooleanExtra(EXTRA_RUN_COACH_GPU_SMOKE_TEST, false) != true) {
+            return
+        }
+        GpuSmokeTestState.coachStatus.value = GpuSmokeTestStatus.Running
+        debugScope.launch {
+            val result = AppContainer.instance.selectedCoachGpuSmokeTestEngine.sendMessage(
+                message = "Reply with exactly OK.",
+                history = emptyList(),
+                snapshot = DietChatSnapshot(
+                    todayBudgetCalories = null,
+                    todayConsumedCalories = 0,
+                    todayRemainingCalories = null,
+                    entries = emptyList(),
+                ),
+            )
+            result
+                .onSuccess { reply ->
+                    Log.i(TAG, "Coach GPU smoke test succeeded: ${reply.take(120)}")
+                    GpuSmokeTestState.coachStatus.value = GpuSmokeTestStatus.Succeeded
+                }
+                .onFailure { throwable ->
+                    Log.e(TAG, "Coach GPU smoke test failed", throwable)
+                    GpuSmokeTestState.coachStatus.value = GpuSmokeTestStatus.Failed(
+                        throwable.message?.take(200) ?: "unknown error",
+                    )
+                }
+        }
+    }
+
+    private fun maybeRunFoodEstimationGpuSmokeTest(intent: Intent?) {
+        if (!BuildConfig.DEBUG || intent?.getBooleanExtra(EXTRA_RUN_FOOD_ESTIMATION_GPU_SMOKE_TEST, false) != true) {
+            return
+        }
+        GpuSmokeTestState.foodEstimationStatus.value = GpuSmokeTestStatus.Running
+        debugScope.launch {
+            val tempFile = withContext(Dispatchers.IO) {
+                val f = File(cacheDir, "smoke_test_image.jpg")
+                val bmp = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(Color.rgb(180, 120, 60))
+                FileOutputStream(f).use { out ->
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                }
+                bmp.recycle()
+                f
+            }
+            val result = AppContainer.instance.foodEstimationGpuSmokeTestEngine.estimate(
+                FoodEstimationRequest(
+                    imagePath = tempFile.absolutePath,
+                    capturedAtEpochMs = System.currentTimeMillis(),
+                ),
+            )
+            result
+                .onSuccess { estimation ->
+                    Log.i(
+                        TAG,
+                        "Food estimation GPU smoke test succeeded: " +
+                            "${estimation.detectedFoodLabel} ~${estimation.estimatedCalories} kcal",
+                    )
+                    GpuSmokeTestState.foodEstimationStatus.value = GpuSmokeTestStatus.Succeeded
+                }
+                .onFailure { throwable ->
+                    Log.e(TAG, "Food estimation GPU smoke test failed", throwable)
+                    GpuSmokeTestState.foodEstimationStatus.value = GpuSmokeTestStatus.Failed(
                         throwable.message?.take(200) ?: "unknown error",
                     )
                 }
@@ -303,6 +395,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_DOWNLOAD_SELECTED_COACH_MODEL = "downloadSelectedCoachModel"
         const val EXTRA_DOWNLOAD_SELECTED_PHOTO_MODELS = "downloadSelectedPhotoModels"
         const val EXTRA_RUN_COACH_NPU_SMOKE_TEST = "runCoachNpuSmokeTest"
+        const val EXTRA_RUN_COACH_GPU_SMOKE_TEST = "runCoachGpuSmokeTest"
+        const val EXTRA_RUN_FOOD_ESTIMATION_GPU_SMOKE_TEST = "runFoodEstimationGpuSmokeTest"
         const val EXTRA_RUN_SELECTED_COACH_DOUBLE_SMOKE_TEST = "runSelectedCoachDoubleSmokeTest"
         const val EXTRA_RUN_SELECTED_COACH_SMOKE_TEST = "runSelectedCoachSmokeTest"
         const val TAG = "MainActivity"
