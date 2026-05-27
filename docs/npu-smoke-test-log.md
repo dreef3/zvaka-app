@@ -1603,6 +1603,58 @@ Script: `tools/gcp/run_att55_no_batchmatmul.sh`
 
 ---
 
+## GPU / CPU Fallback Track — 2026-05-27
+
+### Context
+
+NPU path blocked at Att55 pending investigation. Pivoting to test Gemma 4 E2B (2.4 GB
+litert-community model) on GPU as a viable alternative.
+
+### Model files on device
+
+| File | Size | Source |
+|------|------|--------|
+| `gemma-4-E2B-it.litertlm` | 2.4 GB | litert-community E2B, `backend_constraint: cpu`, MTP drafter |
+| `gemma-4-E2B-it.litertlm.bak` | 2.4 GB | same as above (backup) |
+| `gemma-4-E2B-it.litertlm` (overwritten 2026-05-27) | was 3.4 GB NPU → now 2.4 GB CPU | restored from `.bak` for GPU testing |
+
+### Smoke test infrastructure added (commit e48c45c + a55d427)
+
+- `AppContainer.selectedCoachGpuSmokeTestEngine`: `LiteRtDietChatEngine` with `GemmaBackend.GPU`,
+  hardcoded to `modelStorage.defaultModelFile` (E2B litert-community, 2.4 GB)
+- `AppContainer.foodEstimationGpuSmokeTestEngine`: `LiteRtFoodEstimationEngine` with
+  `GemmaBackend.GPU` and `visionBackend = Backend.GPU()` — multimodal photo path
+- `GpuSmokeTestState.coachStatus` + `foodEstimationStatus` (MutableStateFlow)
+- Triggers: `--ez runCoachGpuSmokeTest true` / `--ez runFoodEstimationGpuSmokeTest true`
+
+### Coach GPU smoke test — 2026-05-27
+
+**First run (before fix)**: Failed immediately — GPU smoke test engine was using
+`preferences.readCoachModel()` which returned the NPU 270M model (MT6985), not the E2B model.
+NPU-compiled model rejected by GPU backend.
+
+**Second run (after fix — hardcode defaultModelFile)**:
+- Engine initialized: `LiteRtConversationRunner: Initializing coach engine backend=gpu`
+- Inference time: ~43 s (08:12:32 → 08:13:15)
+- Result: **SUCCEEDED** — reply "OK." logged at 08:13:15
+- Confirms: 2.4 GB litert-community E2B model works on GPU (slow but functional)
+
+### Food estimation multimodal GPU smoke test — 2026-05-27
+
+- Engine: `LiteRtFoodEstimationEngine` with `backend=gpu` + `visionBackend=GPU`
+- Test image: 32×32 solid brown JPEG created at runtime
+- Engine initialized at 08:15:56 → inference complete at 08:17:29 (~93 s)
+- Result: **SUCCEEDED**
+  ```
+  Description: A slice of golden-brown artisan bread or rustic pastry
+  Calories: 250
+  ```
+- Confirms: multimodal GPU path (vision + LLM both on GPU) works end-to-end on MT6985
+- Model: 2.4 GB litert-community E2B (`backend_constraint: cpu`, MTP drafter)
+  — despite `backend_constraint: cpu`, LiteRT engine loads successfully with `Backend.GPU()`
+
+---
+
 ## Key model facts
 
 | Item | Value |
@@ -1643,4 +1695,24 @@ adb logcat -v time -s MainActivity litert native
 
 # Verify model in place
 adb shell run-as com.dreef3.weightlossapp.debug ls -lh cache/models/
+
+# GPU coach smoke test (uses defaultModelFile = 2.4 GB E2B litert-community)
+# Requires: gemma-4-E2B-it.litertlm = 2.4 GB CPU/GPU model (not NPU model)
+ADB="-s 100.104.183.118:5555"
+adb $ADB shell am force-stop com.dreef3.weightlossapp.debug
+adb $ADB logcat -c
+adb $ADB shell am start -n com.dreef3.weightlossapp.debug/com.dreef3.weightlossapp.app.MainActivity \
+  --ez runCoachGpuSmokeTest true
+# Expect ~43 s; result: "Coach GPU smoke test succeeded: OK."
+
+# GPU food estimation multimodal smoke test (creates 32×32 JPEG, calls estimate())
+adb $ADB shell am force-stop com.dreef3.weightlossapp.debug
+adb $ADB logcat -c
+adb $ADB shell am start -n com.dreef3.weightlossapp.debug/com.dreef3.weightlossapp.app.MainActivity \
+  --ez runFoodEstimationGpuSmokeTest true
+# Expect ~93 s; result: "Food estimation GPU smoke test succeeded: <food> ~<N> kcal"
+
+# Restore 2.4 GB CPU/GPU model (overwrites NPU model if present):
+adb $ADB shell run-as com.dreef3.weightlossapp.debug \
+  cp cache/models/gemma-4-E2B-it.litertlm.bak cache/models/gemma-4-E2B-it.litertlm
 ```
