@@ -201,9 +201,8 @@ class AppContainer private constructor(context: Context) {
             history: List<DietChatMessage>,
             snapshot: DietChatSnapshot,
         ): Result<String> {
-            val selectedModel = preferences.readCoachModel().requiredModelDescriptor()
             return LiteRtDietChatEngine(
-                modelFile = modelStorage.fileFor(selectedModel),
+                modelFile = modelStorage.defaultModelFile,
                 correctionService = dietEntryCorrectionService,
                 inspectionService = dietEntryInspectionService,
                 backendPreferenceProvider = { GemmaBackend.GPU },
