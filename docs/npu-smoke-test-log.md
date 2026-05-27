@@ -1653,6 +1653,35 @@ NPU-compiled model rejected by GPU backend.
 - Model: 2.4 GB litert-community E2B (`backend_constraint: cpu`, MTP drafter)
   — despite `backend_constraint: cpu`, LiteRT engine loads successfully with `Backend.GPU()`
 
+### GPU MTP (speculative decoding) smoke test — 2026-05-27
+
+**Goal**: make speculative decoding (Multi-Token Prediction) work on GPU.
+
+**Issues fixed**:
+1. **Sampler linker namespace** — `libLiteRtTopKOpenClSampler.so` / `libLiteRtTopKWebGpuSampler.so`
+   didn't have `libLiteRt.so` in their ELF NEEDED list; Android linker blocked cross-namespace
+   symbol resolution (`LiteRtCreateEnvironment` not found). Fixed with
+   `patchelf --add-needed libLiteRt.so` on both libs. Confirmed by:
+   `Dynamically loaded LiteRtTopKOpenClSampler C API.`
+
+2. **INVALID_ARGUMENT at mtp_drafter.cc:347** — `litertlm-android:0.10.2` (Apr 14) predates
+   Gemma 4 MTP support; model updated ~May 5, 2026 requires ≥ v0.11.0. Fixed: upgraded to 0.12.0.
+
+3. **SIGSEGV in liblitertlm_jni.so → libLiteRtClGlAccelerator.so** — `liblitertlm_jni.so` (0.12.0)
+   was loading `libLiteRtClGlAccelerator.so` from `litert:2.1.4` (incompatible ABI). Fixed by
+   copying `libLiteRtClGlAccelerator.so` (2.76 MB) and `libLiteRt.so` (5.05 MB) from the 0.12.0
+   AAR into jniLibs so app-local versions win in the merge. Also removed custom NPU
+   `liblitertlm_jni.so` (let 0.12.0 AAR provide it).
+
+**Result (2026-05-27)**:
+- `model_type: tf_lite_mtp_drafter` loaded
+- `enable_speculative_decoding: true`
+- 54 magic-number tensors updated 32003 → 4000
+- Inference: ~34 s with MTP active
+- `Coach GPU smoke test succeeded: OK.` ✅
+
+**SDK versions**: `litertlm-android:0.12.0`, `litert:2.1.4`
+
 ---
 
 ## Key model facts
