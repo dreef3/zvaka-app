@@ -35,6 +35,7 @@ class LiteRtConversationRunner(
     private val modelFile: File,
     private val backendPreferenceProvider: suspend () -> GemmaBackend,
     private val nativeLibraryDir: String = "",
+    private val enableSpeculativeDecoding: Boolean = false,
 ) : CoachConversationRunner {
     private val engineMutex = Mutex()
     private var engine: Engine? = null
@@ -52,6 +53,7 @@ class LiteRtConversationRunner(
         }
     }
 
+    @OptIn(ExperimentalApi::class)
     private suspend fun getOrCreateEngine(): Engine = engineMutex.withLock {
         val desiredPreference = backendPreferenceProvider().toEnginePreference()
         engine?.takeIf { enginePreference == desiredPreference }?.let { return it }
@@ -72,11 +74,16 @@ class LiteRtConversationRunner(
             maxNumTokens = 4000,
             cacheDir = null,
         )
-        debugLog("Initializing coach engine backend=${desiredPreference.label} nativeLibraryDir=${nativeLibraryDir.ifBlank { "<default>" }}")
-        return Engine(engineConfig).also { created ->
-            created.initialize()
-            engine = created
-            enginePreference = desiredPreference
+        debugLog("Initializing coach engine backend=${desiredPreference.label} speculativeDecoding=$enableSpeculativeDecoding nativeLibraryDir=${nativeLibraryDir.ifBlank { "<default>" }}")
+        if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = true
+        return try {
+            Engine(engineConfig).also { created ->
+                created.initialize()
+                engine = created
+                enginePreference = desiredPreference
+            }
+        } finally {
+            if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = null
         }
     }
 

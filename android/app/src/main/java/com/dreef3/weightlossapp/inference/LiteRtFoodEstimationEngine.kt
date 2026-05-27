@@ -35,6 +35,7 @@ class LiteRtFoodEstimationEngine(
     private val modelFile: File,
     private val backendPreferenceProvider: suspend () -> GemmaBackend = { GemmaBackend.GPU },
     private val nativeLibraryDir: String = "",
+    private val enableSpeculativeDecoding: Boolean = false,
 ) : FoodEstimationEngine {
     private val engineMutex = Mutex()
     private val inferenceMutex = Mutex()
@@ -141,6 +142,7 @@ class LiteRtFoodEstimationEngine(
         }
     }
 
+    @OptIn(ExperimentalApi::class)
     private suspend fun getOrCreateEngine(): Engine = engineMutex.withLock {
         engine?.let { return it }
 
@@ -209,11 +211,16 @@ class LiteRtFoodEstimationEngine(
         var lastException: Exception? = null
         for ((label, config) in attempts) {
             try {
-                Log.i(TAG, "Initializing LiteRT-LM engine with backend=$label")
-                return Engine(config).also { created ->
-                    created.initialize()
-                    engine = created
-                    Log.i(TAG, "LiteRT-LM engine initialized with backend=$label for ${modelFile.absolutePath}")
+                Log.i(TAG, "Initializing LiteRT-LM engine with backend=$label speculativeDecoding=$enableSpeculativeDecoding")
+                if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = true
+                return try {
+                    Engine(config).also { created ->
+                        created.initialize()
+                        engine = created
+                        Log.i(TAG, "LiteRT-LM engine initialized with backend=$label for ${modelFile.absolutePath}")
+                    }
+                } finally {
+                    if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = null
                 }
             } catch (exception: Exception) {
                 lastException = exception
