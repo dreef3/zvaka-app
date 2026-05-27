@@ -207,6 +207,7 @@ class AppContainer private constructor(context: Context) {
                 inspectionService = dietEntryInspectionService,
                 backendPreferenceProvider = { GemmaBackend.GPU },
                 nativeLibraryDir = nativeLibraryDir,
+                enableSpeculativeDecoding = true,
             ).sendMessage(message, history, snapshot)
         }
     }
