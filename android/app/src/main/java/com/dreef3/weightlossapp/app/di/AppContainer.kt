@@ -126,7 +126,6 @@ class AppContainer private constructor(context: Context) {
         modelFile = modelStorage.defaultModelFile,
         backendPreferenceProvider = preferences::readGemmaBackend,
         nativeLibraryDir = nativeLibraryDir,
-        enableSpeculativeDecoding = true,
     )
     val llamaFoodEstimationEngine: FoodEstimationEngine = LlamaCppMultimodalFoodEstimationEngine(
         context = context,
@@ -150,7 +149,6 @@ class AppContainer private constructor(context: Context) {
         inspectionService = dietEntryInspectionService,
         backendPreferenceProvider = preferences::readGemmaBackend,
         nativeLibraryDir = nativeLibraryDir,
-        enableSpeculativeDecoding = true,
     )
     val gemmaGgufDietChatEngine: DietChatEngine = LlamaCppDietChatEngine(
         container = this,
@@ -209,7 +207,6 @@ class AppContainer private constructor(context: Context) {
                 inspectionService = dietEntryInspectionService,
                 backendPreferenceProvider = { GemmaBackend.GPU },
                 nativeLibraryDir = nativeLibraryDir,
-                enableSpeculativeDecoding = true,
             ).sendMessage(message, history, snapshot)
         }
     }
@@ -218,7 +215,6 @@ class AppContainer private constructor(context: Context) {
         modelFile = modelStorage.defaultModelFile,
         backendPreferenceProvider = { GemmaBackend.GPU },
         nativeLibraryDir = nativeLibraryDir,
-        enableSpeculativeDecoding = true,
     )
     private val rawDietChatEngine: DietChatEngine = SelectableDietChatEngine(
         preferences = preferences,
