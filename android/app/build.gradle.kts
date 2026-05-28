@@ -199,6 +199,9 @@ android {
     packaging {
         jniLibs {
             keepDebugSymbols += "**/*.so"
+            useLegacyPackaging = true
+            pickFirsts += "**/libLiteRtClGlAccelerator.so"
+            pickFirsts += "**/libLiteRt.so"
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -256,8 +259,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.android.material:material:1.12.0")
-    implementation("com.google.ai.edge.litert:litert:2.1.0")
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
+    implementation("com.google.ai.edge.litert:litert:2.1.4")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.12.0")
     implementation("com.google.android.gms:play-services-tflite-java:16.4.0") {
         exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
     }
