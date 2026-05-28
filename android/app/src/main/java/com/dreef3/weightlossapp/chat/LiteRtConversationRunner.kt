@@ -73,6 +73,7 @@ class LiteRtConversationRunner(
         @OptIn(ExperimentalApi::class)
         val shouldEnableMtp = enableSpeculativeDecoding &&
             Capabilities(modelFile.absolutePath).use { it.hasSpeculativeDecodingSupport() }
+        @OptIn(ExperimentalApi::class)
         if (shouldEnableMtp) ExperimentalFlags.enableSpeculativeDecoding = true
         return try {
             Engine(engineConfig).also { created ->
