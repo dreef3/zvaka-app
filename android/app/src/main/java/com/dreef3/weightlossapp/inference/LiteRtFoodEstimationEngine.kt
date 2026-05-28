@@ -31,6 +31,7 @@ import kotlin.coroutines.resumeWithException
 
 class LiteRtFoodEstimationEngine(
     private val modelFile: File,
+    private val enableSpeculativeDecoding: Boolean = false,
 ) : FoodEstimationEngine {
     private val engineMutex = Mutex()
     private val inferenceMutex = Mutex()
@@ -163,11 +164,18 @@ class LiteRtFoodEstimationEngine(
         var lastException: Exception? = null
         for ((label, config) in attempts) {
             try {
-                Log.i(TAG, "Initializing LiteRT-LM engine with backend=$label")
-                return Engine(config).also { created ->
-                    created.initialize()
-                    engine = created
-                    Log.i(TAG, "LiteRT-LM engine initialized with backend=$label for ${modelFile.absolutePath}")
+                Log.i(TAG, "Initializing LiteRT-LM engine with backend=$label speculativeDecoding=$enableSpeculativeDecoding")
+                @OptIn(ExperimentalApi::class)
+                if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = true
+                return try {
+                    Engine(config).also { created ->
+                        created.initialize()
+                        engine = created
+                        Log.i(TAG, "LiteRT-LM engine initialized with backend=$label for ${modelFile.absolutePath}")
+                    }
+                } finally {
+                    @OptIn(ExperimentalApi::class)
+                    if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = null
                 }
             } catch (exception: Exception) {
                 lastException = exception

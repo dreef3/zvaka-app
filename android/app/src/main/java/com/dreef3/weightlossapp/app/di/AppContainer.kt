@@ -119,6 +119,7 @@ class AppContainer private constructor(context: Context) {
     )
     val gemmaFoodEstimationEngine: FoodEstimationEngine = LiteRtFoodEstimationEngine(
         modelFile = modelStorage.defaultModelFile,
+        enableSpeculativeDecoding = true,
     )
     val foodEstimationEngine: FoodEstimationEngine = SelectableFoodEstimationEngine(
         preferences = preferences,
@@ -133,6 +134,7 @@ class AppContainer private constructor(context: Context) {
         correctionService = dietEntryCorrectionService,
         inspectionService = dietEntryInspectionService,
         backendPreferenceProvider = preferences::readGemmaBackend,
+        enableSpeculativeDecoding = true,
     )
     val dietChatEngine: DietChatEngine = SelectableDietChatEngine(
         preferences = preferences,

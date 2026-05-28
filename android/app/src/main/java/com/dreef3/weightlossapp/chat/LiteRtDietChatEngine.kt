@@ -13,10 +13,12 @@ class LiteRtDietChatEngine(
     private val correctionService: DietEntryCorrectionService,
     private val inspectionService: DietEntryInspectionService,
     private val backendPreferenceProvider: suspend () -> GemmaBackend,
+    private val enableSpeculativeDecoding: Boolean = false,
 ) : DietChatEngine {
     private val conversationRunner: CoachConversationRunner = LiteRtConversationRunner(
         modelFile = modelFile,
         backendPreferenceProvider = backendPreferenceProvider,
+        enableSpeculativeDecoding = enableSpeculativeDecoding,
     )
 
     override suspend fun sendMessage(

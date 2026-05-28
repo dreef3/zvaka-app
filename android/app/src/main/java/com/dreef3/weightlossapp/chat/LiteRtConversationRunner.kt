@@ -34,6 +34,7 @@ interface CoachConversationRunner {
 class LiteRtConversationRunner(
     private val modelFile: File,
     private val backendPreferenceProvider: suspend () -> GemmaBackend,
+    private val enableSpeculativeDecoding: Boolean = false,
 ) : CoachConversationRunner {
     private val engineMutex = Mutex()
     private var engine: Engine? = null
@@ -68,10 +69,17 @@ class LiteRtConversationRunner(
             maxNumTokens = 4000,
             cacheDir = null,
         )
-        return Engine(engineConfig).also { created ->
-            created.initialize()
-            engine = created
-            enginePreference = desiredPreference
+        @OptIn(ExperimentalApi::class)
+        if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = true
+        return try {
+            Engine(engineConfig).also { created ->
+                created.initialize()
+                engine = created
+                enginePreference = desiredPreference
+            }
+        } finally {
+            @OptIn(ExperimentalApi::class)
+            if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = null
         }
     }
 
