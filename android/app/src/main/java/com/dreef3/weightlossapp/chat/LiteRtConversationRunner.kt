@@ -5,6 +5,7 @@ import com.dreef3.weightlossapp.BuildConfig
 import com.dreef3.weightlossapp.data.preferences.GemmaBackend
 import com.dreef3.weightlossapp.data.preferences.GemmaBackendPreference
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Capabilities
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
@@ -70,7 +71,9 @@ class LiteRtConversationRunner(
             cacheDir = null,
         )
         @OptIn(ExperimentalApi::class)
-        if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = true
+        val shouldEnableMtp = enableSpeculativeDecoding &&
+            Capabilities(modelFile.absolutePath).use { it.hasSpeculativeDecodingSupport() }
+        if (shouldEnableMtp) ExperimentalFlags.enableSpeculativeDecoding = true
         return try {
             Engine(engineConfig).also { created ->
                 created.initialize()
@@ -79,13 +82,14 @@ class LiteRtConversationRunner(
             }
         } finally {
             @OptIn(ExperimentalApi::class)
-            if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = null
+            if (shouldEnableMtp) ExperimentalFlags.enableSpeculativeDecoding = null
         }
     }
 
     @OptIn(ExperimentalApi::class)
     private fun Engine.createConversationWithTools(tools: List<ToolProvider>): Conversation {
         ExperimentalFlags.enableConversationConstrainedDecoding = true
+        ExperimentalFlags.filterChannelContentFromKvCache = true
         return try {
             createConversation(
                 ConversationConfig(
@@ -104,6 +108,7 @@ class LiteRtConversationRunner(
             )
         } finally {
             ExperimentalFlags.enableConversationConstrainedDecoding = false
+            ExperimentalFlags.filterChannelContentFromKvCache = false
         }
     }
 
