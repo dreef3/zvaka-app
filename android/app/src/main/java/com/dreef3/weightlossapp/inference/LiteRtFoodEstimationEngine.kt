@@ -6,6 +6,7 @@ import android.util.Log
 import com.dreef3.weightlossapp.BuildConfig
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Capabilities
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
@@ -149,6 +150,7 @@ class LiteRtFoodEstimationEngine(
                 visionBackend = Backend.GPU(),
                 audioBackend = null,
                 maxNumTokens = DEFAULT_MAX_TOKENS,
+                maxNumImages = 1,
                 cacheDir = null,
             ),
             "cpu" to EngineConfig(
@@ -157,16 +159,21 @@ class LiteRtFoodEstimationEngine(
                 visionBackend = Backend.GPU(),
                 audioBackend = null,
                 maxNumTokens = DEFAULT_MAX_TOKENS,
+                maxNumImages = 1,
                 cacheDir = null,
             ),
         )
 
+        @OptIn(ExperimentalApi::class)
+        val shouldEnableMtp = enableSpeculativeDecoding &&
+            Capabilities(modelFile.absolutePath).use { it.hasSpeculativeDecodingSupport() }
+
         var lastException: Exception? = null
         for ((label, config) in attempts) {
             try {
-                Log.i(TAG, "Initializing LiteRT-LM engine with backend=$label speculativeDecoding=$enableSpeculativeDecoding")
+                Log.i(TAG, "Initializing LiteRT-LM engine with backend=$label speculativeDecoding=$shouldEnableMtp")
                 @OptIn(ExperimentalApi::class)
-                if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = true
+                if (shouldEnableMtp) ExperimentalFlags.enableSpeculativeDecoding = true
                 return try {
                     Engine(config).also { created ->
                         created.initialize()
@@ -175,7 +182,7 @@ class LiteRtFoodEstimationEngine(
                     }
                 } finally {
                     @OptIn(ExperimentalApi::class)
-                    if (enableSpeculativeDecoding) ExperimentalFlags.enableSpeculativeDecoding = null
+                    if (shouldEnableMtp) ExperimentalFlags.enableSpeculativeDecoding = null
                 }
             } catch (exception: Exception) {
                 lastException = exception
