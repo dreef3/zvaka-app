@@ -1,5 +1,6 @@
 package com.dreef3.weightlossapp.domain.usecase
 
+import android.util.Log
 import com.dreef3.weightlossapp.app.time.LocalDateProvider
 import com.dreef3.weightlossapp.app.media.PhotoStorage
 import com.dreef3.weightlossapp.domain.model.ConfidenceState
@@ -49,7 +50,7 @@ class BackgroundPhotoCaptureUseCase(
         userVisibleText: String?,
         preferredDescription: String?,
     ): Long {
-        photoStorage.normalizePhoto(imagePath)
+        // Create the entry FIRST so the photo is never silently lost if normalization fails.
         val pendingEntry = FoodEntry(
             capturedAt = capturedAt,
             entryDate = localDateProvider.dateFor(capturedAt),
@@ -64,6 +65,8 @@ class BackgroundPhotoCaptureUseCase(
             entryStatus = FoodEntryStatus.Processing,
         )
         val entryId = repository.upsert(pendingEntry)
+        runCatching { photoStorage.normalizePhoto(imagePath) }
+            .onFailure { Log.w(TAG, "Photo normalization failed for entry=$entryId, proceeding with original", it) }
         engineTaskQueue.enqueuePhotoEstimate(
             entryId = entryId,
             imagePath = imagePath,
@@ -76,12 +79,26 @@ class BackgroundPhotoCaptureUseCase(
     }
 
     suspend fun retry(entry: FoodEntry) {
-        photoStorage.normalizePhoto(entry.imagePath)
+        if (!photoStorage.isReadablePhoto(entry.imagePath)) {
+            repository.upsert(
+                entry.copy(
+                    estimatedCalories = 0,
+                    finalCalories = 0,
+                    confidenceState = ConfidenceState.Failed,
+                    confidenceNotes = "The saved photo is no longer readable. Enter calories manually or recapture the meal photo.",
+                    confirmationStatus = ConfirmationStatus.NotRequired,
+                    source = FoodEntrySource.AiEstimate,
+                    entryStatus = FoodEntryStatus.NeedsManual,
+                ),
+            )
+            return
+        }
+        runCatching { photoStorage.normalizePhoto(entry.imagePath) }
+            .onFailure { Log.w(TAG, "Photo normalization failed on retry for entry=${entry.id}, proceeding with original", it) }
         val retryingEntry = entry.copy(
             estimatedCalories = 0,
             finalCalories = 0,
             confidenceState = ConfidenceState.Failed,
-            detectedFoodLabel = entry.detectedFoodLabel,
             confidenceNotes = "Retrying photo estimation in background.",
             confirmationStatus = ConfirmationStatus.NotRequired,
             source = FoodEntrySource.AiEstimate,
@@ -96,5 +113,9 @@ class BackgroundPhotoCaptureUseCase(
             userVisibleText = null,
             preferredDescription = entry.detectedFoodLabel,
         )
+    }
+
+    private companion object {
+        private const val TAG = "BackgroundPhotoCapture"
     }
 }

@@ -299,10 +299,12 @@ class PersistentEngineTaskWorker(
         notificationManager.createNotificationChannel(channel)
     }
 
-    private fun shouldRetryAfterFailure(throwable: Throwable?): Boolean =
-        throwable is CancellationException ||
+    private fun shouldRetryAfterFailure(throwable: Throwable?): Boolean {
+        if (runAttemptCount >= MAX_RETRY_ATTEMPTS) return false
+        return throwable is CancellationException ||
             throwable is InterruptedException ||
-            (throwable is FoodEstimationException && throwable.error == FoodEstimationError.InferenceTimeout)
+            (throwable is FoodEstimationException && throwable.error in RETRYABLE_ESTIMATION_ERRORS)
+    }
 
     companion object {
         const val KEY_TASK_TYPE = "task_type"
@@ -321,5 +323,11 @@ class PersistentEngineTaskWorker(
         private const val TAG = "PersistentEngineTask"
         private const val CHANNEL_ID = "persistent_engine_tasks"
         private const val NOTIFICATION_ID = 1004
+        private const val MAX_RETRY_ATTEMPTS = 5
+        private val RETRYABLE_ESTIMATION_ERRORS = setOf(
+            FoodEstimationError.InferenceTimeout,
+            FoodEstimationError.ModelUnavailable,
+            FoodEstimationError.ModelLoadFailed,
+        )
     }
 }
