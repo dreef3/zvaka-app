@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Instant
 
 open class PhotoStorage(
@@ -18,6 +20,14 @@ open class PhotoStorage(
     }
 
     fun listPhotoFiles(): List<File> = photoDirectory.listFiles()?.filter(File::isFile).orEmpty()
+
+    fun isReadablePhoto(path: String): Boolean {
+        val file = File(path)
+        if (!file.exists() || !file.isFile || !file.canRead()) return false
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        return bounds.outWidth > 0 && bounds.outHeight > 0
+    }
 
     open fun normalizePhoto(path: String): Boolean {
         val file = File(path)
@@ -56,16 +66,17 @@ open class PhotoStorage(
             stream.toByteArray()
         }
         val tempFile = File(file.parentFile, "${file.name}.tmp")
-        tempFile.writeBytes(bytes)
-        if (file.exists() && !file.delete()) {
+        return try {
+            tempFile.writeBytes(bytes)
+            // REPLACE_EXISTING atomically replaces the target — if the move fails,
+            // the original file is left intact (unlike delete-then-rename which can
+            // leave both files gone if the rename fails after the delete succeeds).
+            Files.move(tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            true
+        } catch (e: Exception) {
             tempFile.delete()
-            return false
+            false
         }
-        if (!tempFile.renameTo(file)) {
-            tempFile.delete()
-            return false
-        }
-        return true
     }
 
     fun ensureDirectories() {
