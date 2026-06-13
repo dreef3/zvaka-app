@@ -90,7 +90,6 @@ class LiteRtConversationRunner(
     @OptIn(ExperimentalApi::class)
     private fun Engine.createConversationWithTools(tools: List<ToolProvider>): Conversation {
         ExperimentalFlags.enableConversationConstrainedDecoding = true
-        ExperimentalFlags.filterChannelContentFromKvCache = true
         return try {
             createConversation(
                 ConversationConfig(
@@ -109,7 +108,6 @@ class LiteRtConversationRunner(
             )
         } finally {
             ExperimentalFlags.enableConversationConstrainedDecoding = false
-            ExperimentalFlags.filterChannelContentFromKvCache = false
         }
     }
 
