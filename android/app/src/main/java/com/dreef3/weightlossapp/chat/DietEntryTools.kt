@@ -4,6 +4,7 @@ import android.util.Log
 import com.google.ai.edge.litertlm.Tool
 import com.google.ai.edge.litertlm.ToolParam
 import com.google.ai.edge.litertlm.ToolSet
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.runBlocking
 
 class DietEntryTools(
@@ -86,8 +87,11 @@ class DietEntryTools(
                     reason = reason,
                 ),
             )
+        }.onSuccess { result ->
+            if (result["success"] == false) recordToolFailure("correctEntry", "service_rejected", result["message"] as? String)
         }.getOrElse { throwable ->
             Log.e(TAG, "correctEntry failed entryId=$entryId", throwable)
+            recordToolFailure("correctEntry", throwable::class.simpleName, throwable.message)
             mapOf("success" to false, "message" to "Failed to correct entry: ${throwable.message}")
         }
     }
@@ -120,8 +124,11 @@ class DietEntryTools(
                 correctedDescription = correctedDescription.takeIf { it.isNotBlank() },
                 reason = reason,
             )
+        }.onSuccess { result ->
+            if (result["success"] == false) recordToolFailure("reestimateEntry", "service_rejected", result["message"] as? String)
         }.getOrElse { throwable ->
             Log.e(TAG, "reestimateEntry failed entryId=$entryId", throwable)
+            recordToolFailure("reestimateEntry", throwable::class.simpleName, throwable.message)
             mapOf("success" to false, "message" to "Failed to re-estimate entry: ${throwable.message}")
         }
     }
@@ -145,10 +152,24 @@ class DietEntryTools(
                     reason = reason,
                 ),
             )
+        }.onSuccess { result ->
+            if (result["success"] == false) {
+                recordToolFailure("logFoodEntry", "service_rejected", result["message"] as? String)
+            } else {
+                Log.i(TAG, "logFoodEntry saved entryId=${result["entryId"]} calories=$calories")
+            }
         }.getOrElse { throwable ->
             Log.e(TAG, "logFoodEntry failed", throwable)
+            recordToolFailure("logFoodEntry", throwable::class.simpleName, throwable.message)
             mapOf("success" to false, "message" to "Failed to log entry: ${throwable.message}")
         }
+    }
+
+    private fun recordToolFailure(tool: String, errorType: String?, message: String?) {
+        val crashlytics = runCatching { FirebaseCrashlytics.getInstance() }.getOrNull() ?: return
+        crashlytics.setCustomKey("chat_tool", tool)
+        crashlytics.setCustomKey("chat_tool_error", errorType ?: "unknown")
+        crashlytics.recordException(ChatToolFailureException(tool, errorType, message))
     }
 
     companion object {
