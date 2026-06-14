@@ -72,7 +72,7 @@ class DietEntryCorrectionService(
         val entryDate = request.dateIso
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?.let(LocalDate::parse)
+            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             ?: localDateProvider.today()
         if (entryDate.isAfter(localDateProvider.today())) {
             return mapOf(
