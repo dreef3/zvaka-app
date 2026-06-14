@@ -139,7 +139,7 @@ class DietEntryTools(
     fun logFoodEntry(
         @ToolParam(description = "Exact meal name from the user's message. Copy it directly even if it is short or informal. Examples: 'Mac Menu', 'potato burek', 'yogurt with berries'.") mealName: String,
         @ToolParam(description = "Whole-number calories for the entry.") calories: Int,
-        @ToolParam(description = "Entry date in ISO format yyyy-MM-dd. Use empty string for today.") dateIso: String,
+        @ToolParam(description = "Entry date as yyyy-MM-dd (e.g. '2026-06-14'). Use empty string for today. Good: '2026-06-14'. Bad: 'today', 'Tuesday', 'June 14'.") dateIso: String,
         @ToolParam(description = "Short note explaining that this was added from chat. Do not ask the user for this.") reason: String,
     ): Map<String, Any?> = runBlocking {
         Log.i(TAG, "logFoodEntry mealName=$mealName calories=$calories dateIso=$dateIso")

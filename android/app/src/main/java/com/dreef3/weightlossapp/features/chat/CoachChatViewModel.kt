@@ -68,6 +68,7 @@ class CoachChatViewModel(
                 entry.entryStatus == FoodEntryStatus.Ready
         }
         DietChatSnapshot(
+            todayDateIso = today.toString(),
             todayBudgetCalories = budget,
             todayConsumedCalories = todayEntries.sumOf { it.finalCalories },
             todayRemainingCalories = budget?.minus(todayEntries.sumOf { it.finalCalories }),
@@ -90,6 +91,7 @@ class CoachChatViewModel(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = DietChatSnapshot(
+            todayDateIso = today.toString(),
             todayBudgetCalories = null,
             todayConsumedCalories = 0,
             todayRemainingCalories = null,

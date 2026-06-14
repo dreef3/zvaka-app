@@ -229,6 +229,7 @@ class PersistentEngineTaskWorker(
                 entry.entryStatus == FoodEntryStatus.Ready
         }
         return DietChatSnapshot(
+            todayDateIso = today.toString(),
             todayBudgetCalories = budget,
             todayConsumedCalories = todayEntries.sumOf { it.finalCalories },
             todayRemainingCalories = budget?.minus(todayEntries.sumOf { it.finalCalories }),

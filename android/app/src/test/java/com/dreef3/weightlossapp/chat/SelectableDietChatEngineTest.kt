@@ -40,6 +40,7 @@ class SelectableDietChatEngineTest {
     }
 
     private fun emptySnapshot() = DietChatSnapshot(
+        todayDateIso = "2026-01-01",
         todayBudgetCalories = null,
         todayConsumedCalories = 0,
         todayRemainingCalories = null,
