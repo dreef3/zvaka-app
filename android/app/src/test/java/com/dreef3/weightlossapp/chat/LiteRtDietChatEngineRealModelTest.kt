@@ -165,6 +165,7 @@ class LiteRtDietChatEngineRealModelTest {
     }
 
     private fun emptySnapshot() = DietChatSnapshot(
+        todayDateIso = java.time.LocalDate.now().toString(),
         todayBudgetCalories = 2000,
         todayConsumedCalories = 0,
         todayRemainingCalories = 2000,
@@ -172,6 +173,7 @@ class LiteRtDietChatEngineRealModelTest {
     )
 
     private fun snapshotFor(entries: List<FoodEntry>) = DietChatSnapshot(
+        todayDateIso = java.time.LocalDate.now().toString(),
         todayBudgetCalories = 2000,
         todayConsumedCalories = entries.sumOf { it.finalCalories },
         todayRemainingCalories = 2000 - entries.sumOf { it.finalCalories },

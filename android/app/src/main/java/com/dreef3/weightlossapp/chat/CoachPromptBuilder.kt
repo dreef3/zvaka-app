@@ -25,6 +25,7 @@ object CoachPromptBuilder {
     }
 
     private fun DietChatSnapshot.buildSnapshotContext(): String = buildString {
+        appendLine("Today's date: $todayDateIso")
         appendLine("Today's budget calories: ${todayBudgetCalories ?: "unknown"}")
         appendLine("Today's consumed calories: $todayConsumedCalories")
         appendLine("Today's remaining calories: ${todayRemainingCalories ?: "unknown"}")

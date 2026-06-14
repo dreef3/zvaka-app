@@ -14,6 +14,7 @@ enum class ChatRole {
 }
 
 data class DietChatSnapshot(
+    val todayDateIso: String,
     val todayBudgetCalories: Int?,
     val todayConsumedCalories: Int,
     val todayRemainingCalories: Int?,

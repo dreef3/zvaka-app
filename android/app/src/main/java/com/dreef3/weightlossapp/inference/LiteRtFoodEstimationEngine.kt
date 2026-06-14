@@ -111,10 +111,24 @@ class LiteRtFoodEstimationEngine(
                             Content.Text(
                                 """
                                 You analyze a food photo and must call submitFoodEstimate exactly once.
-                                Reason carefully about what the food is and its portion size before deciding calories,
-                                but do that reasoning internally.
-                                The description must be one short line.
-                                Calories must be a single integer estimate.
+
+                                Process:
+                                1. Identify all distinct food items visible in the photo.
+                                2. Estimate the portion size of each item (e.g. weight in grams or volume).
+                                3. Estimate the calories for each item separately.
+                                4. Sum those to get the total calorie count.
+
+                                Perform this reasoning in your thinking. Do not output it as text.
+
+                                For the description, write a short one-line summary of what is shown in the photo.
+                                Do NOT use first-person or past-tense phrasing.
+
+                                Good: "Grilled chicken breast with roasted vegetables and brown rice"
+                                Good: "Two scrambled eggs, buttered toast, and a side of sliced fruit"
+                                Bad: "I had grilled chicken with vegetables"
+                                Bad: "I ate scrambled eggs this morning"
+
+                                Calories must be the total as a single integer.
                                 Do not answer in free-form text when the tool is available.
                                 """.trimIndent(),
                             ),
