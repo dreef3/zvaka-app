@@ -102,6 +102,7 @@ class PhotoProcessingWorker(
                         entryStatus = FoodEntryStatus.NeedsManual,
                         debugInteractionLog = when (throwable) {
                             is FoodEstimationException -> throwable.debugInteractionLog
+                                ?: "Error: ${throwable.error}"
                             else -> throwable.stackTraceToString()
                         },
                     )
