@@ -71,7 +71,14 @@ class LiteRtFoodEstimationEngine(
                             debugLog("tool result description=${it.description} calories=${it.calories}")
                         }
                         submittedEstimate?.toResult(response.debugTrace, request.preferredDescription) ?: run {
-                            val parsed = FoodEstimationTextParser.parse(response.responseText)
+                            val parsed = try {
+                                FoodEstimationTextParser.parse(response.responseText)
+                            } catch (e: FoodEstimationException) {
+                                throw FoodEstimationException(
+                                    error = e.error,
+                                    debugInteractionLog = response.debugTrace,
+                                )
+                            }
                             parsed.copy(
                                 detectedFoodLabel = request.preferredDescription?.trim()?.ifBlank { null }
                                     ?: parsed.detectedFoodLabel,
